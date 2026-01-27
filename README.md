@@ -20,7 +20,7 @@ We built Craft Agents because we wanted a better, more opinionated (and preferab
 **How do I connect to Linear, Gmail, Slack...?**
 Tell the agent "add Linear as a source." It finds public APIs and MCP servers, reads their docs, sets up credentials, and configures everything. No config files, no setup wizards.
 
-[Check out how I just connected to Slack →](https://agents.craft.do/s/DRNQEiy8w2e1v5LPgKl8b) · [Or watch it set up Gmail in one go →](https://agents.craft.do/s/yUVFb8zrlFaaGuw7mjoke)
+[Check out how I just connected to Slack →](https://agents.craft.do/s/DRNQEiy8w2e1v5LPgKl8b)
 
 **I already have my MCP config JSON.**
 Paste it. The agent handles the rest.
