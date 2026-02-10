@@ -169,6 +169,18 @@ async function buildCopilotInterceptor(): Promise<void> {
 async function buildBridgeServer(): Promise<void> {
   console.log("🌉 Building Bridge MCP Server...");
 
+  const srcEntry = join(BRIDGE_SERVER_DIR, "src/index.ts");
+
+  // OSS distribution may only have prebuilt dist/ without src/
+  if (!existsSync(srcEntry)) {
+    if (existsSync(BRIDGE_SERVER_OUTPUT)) {
+      console.log("✅ Bridge server: using prebuilt dist");
+      return;
+    }
+    console.warn("⚠️  Bridge server: no src/ and no prebuilt dist/ — skipping (OSS build)");
+    return;
+  }
+
   // Ensure dist directory exists
   const distDir = join(BRIDGE_SERVER_DIR, "dist");
   if (!existsSync(distDir)) {
@@ -178,7 +190,7 @@ async function buildBridgeServer(): Promise<void> {
   const proc = spawn({
     cmd: [
       "bun", "build",
-      join(BRIDGE_SERVER_DIR, "src/index.ts"),
+      srcEntry,
       "--outfile", BRIDGE_SERVER_OUTPUT,
       "--target", "node",
       "--format", "cjs",
@@ -208,6 +220,18 @@ async function buildBridgeServer(): Promise<void> {
 async function buildSessionServer(): Promise<void> {
   console.log("📋 Building Session MCP Server...");
 
+  const srcEntry = join(SESSION_SERVER_DIR, "src/index.ts");
+
+  // OSS distribution may only have prebuilt dist/ without src/
+  if (!existsSync(srcEntry)) {
+    if (existsSync(SESSION_SERVER_OUTPUT)) {
+      console.log("✅ Session server: using prebuilt dist");
+      return;
+    }
+    console.warn("⚠️  Session server: no src/ and no prebuilt dist/ — skipping (OSS build)");
+    return;
+  }
+
   // Ensure dist directory exists
   const distDir = join(SESSION_SERVER_DIR, "dist");
   if (!existsSync(distDir)) {
@@ -217,7 +241,7 @@ async function buildSessionServer(): Promise<void> {
   const proc = spawn({
     cmd: [
       "bun", "build",
-      join(SESSION_SERVER_DIR, "src/index.ts"),
+      srcEntry,
       "--outfile", SESSION_SERVER_OUTPUT,
       "--target", "node",
       "--format", "cjs",

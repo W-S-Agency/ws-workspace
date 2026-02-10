@@ -869,6 +869,11 @@ export const IPC_CHANNELS = {
   MENU_COPY: 'menu:copy',
   MENU_PASTE: 'menu:paste',
   MENU_SELECT_ALL: 'menu:selectAll',
+
+  // Agency repos (skills library + agency memory)
+  AGENCY_REPO_STATUS: 'agency:repoStatus',
+  AGENCY_REPO_IMPORT: 'agency:repoImport',
+  AGENCY_REPO_UPDATE: 'agency:repoUpdate',
 } as const
 
 // Re-import types for ElectronAPI
@@ -881,6 +886,14 @@ export interface ToolIconMapping {
   /** Data URL of the icon (e.g., data:image/png;base64,...) */
   iconDataUrl: string
   commands: string[]
+}
+
+/** Status of an agency shared repo (skills-library or agency-memory) */
+export interface AgencyRepoStatus {
+  imported: boolean
+  path: string | null
+  lastUpdated: string | null
+  error?: string
 }
 
 // Type-safe IPC API exposed to renderer
@@ -1155,6 +1168,11 @@ export interface ElectronAPI {
 
   // Git operations
   getGitBranch(dirPath: string): Promise<string | null>
+
+  // Agency repos
+  getAgencyRepoStatus(repoId: string): Promise<AgencyRepoStatus>
+  importAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
+  updateAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
 
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>

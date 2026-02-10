@@ -490,6 +490,14 @@ const api: ElectronAPI = {
   getGitBranch: (dirPath: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_GIT_BRANCH, dirPath),
 
+  // Agency repos
+  getAgencyRepoStatus: (repoId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_STATUS, repoId),
+  importAgencyRepo: (repoId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_IMPORT, repoId),
+  updateAgencyRepo: (repoId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_UPDATE, repoId),
+
   // Git Bash (Windows)
   checkGitBash: () => ipcRenderer.invoke(IPC_CHANNELS.GITBASH_CHECK),
   browseForGitBash: () => ipcRenderer.invoke(IPC_CHANNELS.GITBASH_BROWSE),

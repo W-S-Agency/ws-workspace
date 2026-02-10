@@ -994,6 +994,193 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
   })
 
+  // ─── Agency repos (skills library + agency memory) ───────────────────────────
+
+  const AGENCY_REPOS = {
+    'skills-library': {
+      url: 'https://github.com/W-S-Agency/skills-library.git',
+      dirName: 'skills-library',
+    },
+    'agency-memory': {
+      url: 'https://github.com/W-S-Agency/agency-memory.git',
+      dirName: 'agency-memory',
+    },
+  } as const
+
+  type AgencyRepoId = keyof typeof AGENCY_REPOS
+
+  function getAgencyRepoPath(repoId: AgencyRepoId): string {
+    return join(homedir(), '.ws-workspace', 'agency', AGENCY_REPOS[repoId].dirName)
+  }
+
+  function isValidAgencyRepoId(id: string): id is AgencyRepoId {
+    return id in AGENCY_REPOS
+  }
+
+  /**
+   * Update ~/.claude/CLAUDE.md with a delimited section referencing imported agency repos.
+   * Uses <!-- WS-AGENCY:BEGIN --> / <!-- WS-AGENCY:END --> markers to safely replace
+   * only our section without touching other content.
+   */
+  function updateClaudeMdAgencySection(): void {
+    const claudeDir = join(homedir(), '.claude')
+    const claudeMdPath = join(claudeDir, 'CLAUDE.md')
+
+    const skillsPath = getAgencyRepoPath('skills-library')
+    const memoryPath = getAgencyRepoPath('agency-memory')
+    const skillsImported = existsSync(join(skillsPath, '.git'))
+    const memoryImported = existsSync(join(memoryPath, '.git'))
+
+    if (!skillsImported && !memoryImported) return
+
+    const portableSkillsPath = '~/.ws-workspace/agency/skills-library'
+    const portableMemoryPath = '~/.ws-workspace/agency/agency-memory'
+
+    const lines: string[] = [
+      '<!-- WS-AGENCY:BEGIN -->',
+      '# W&S Agency - Shared Knowledge',
+      '',
+    ]
+
+    if (skillsImported) {
+      lines.push(
+        `- **Skills Library**: \`${portableSkillsPath}/\``,
+        `  - Skills index: \`${portableSkillsPath}/SKILLS-INDEX.md\``,
+        `  - Decision matrix: \`${portableSkillsPath}/SKILLS-MATRIX.md\``,
+        '',
+      )
+    }
+    if (memoryImported) {
+      lines.push(
+        `- **Agency Memory**: \`${portableMemoryPath}/\``,
+        `  - Best practices: \`${portableMemoryPath}/memory-exports/best-practices/\``,
+        `  - Playbooks: \`${portableMemoryPath}/playbooks/\``,
+        `  - Templates: \`${portableMemoryPath}/templates/\``,
+        '',
+      )
+    }
+    lines.push('<!-- WS-AGENCY:END -->')
+
+    const newSection = lines.join('\n')
+
+    mkdirSync(claudeDir, { recursive: true })
+
+    if (existsSync(claudeMdPath)) {
+      let content = readFileSync(claudeMdPath, 'utf-8')
+      const beginMarker = '<!-- WS-AGENCY:BEGIN -->'
+      const endMarker = '<!-- WS-AGENCY:END -->'
+      const beginIdx = content.indexOf(beginMarker)
+      const endIdx = content.indexOf(endMarker)
+
+      if (beginIdx !== -1 && endIdx !== -1) {
+        content = content.slice(0, beginIdx) + newSection + content.slice(endIdx + endMarker.length)
+      } else {
+        content = content.trimEnd() + '\n\n' + newSection + '\n'
+      }
+      writeFileSync(claudeMdPath, content, 'utf-8')
+    } else {
+      writeFileSync(claudeMdPath, newSection + '\n', 'utf-8')
+    }
+
+    ipcLog.info('[agency] Updated ~/.claude/CLAUDE.md with agency section')
+  }
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_STATUS, (_event, repoId: string) => {
+    if (!isValidAgencyRepoId(repoId)) {
+      return { imported: false, path: null, lastUpdated: null, error: `Unknown repo: ${repoId}` }
+    }
+    const repoPath = getAgencyRepoPath(repoId)
+    if (!existsSync(join(repoPath, '.git'))) {
+      return { imported: false, path: null, lastUpdated: null }
+    }
+    try {
+      const lastUpdated = execSync('git log -1 --format=%cI', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim()
+      return { imported: true, path: repoPath, lastUpdated }
+    } catch {
+      return { imported: true, path: repoPath, lastUpdated: null }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_IMPORT, async (_event, repoId: string) => {
+    if (!isValidAgencyRepoId(repoId)) {
+      return { success: false, error: `Unknown repo: ${repoId}` }
+    }
+    const repo = AGENCY_REPOS[repoId]
+    const targetPath = getAgencyRepoPath(repoId)
+    const parentDir = dirname(targetPath)
+
+    await mkdir(parentDir, { recursive: true })
+
+    // If directory exists but is not a valid git repo, remove it
+    if (existsSync(targetPath) && !existsSync(join(targetPath, '.git'))) {
+      await rm(targetPath, { recursive: true })
+    }
+
+    // If already cloned, treat as update
+    if (existsSync(join(targetPath, '.git'))) {
+      try {
+        execSync('git pull --ff-only', {
+          cwd: targetPath,
+          encoding: 'utf-8',
+          timeout: 60000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+        updateClaudeMdAgencySection()
+        return { success: true }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? (err as { stderr?: string }).stderr || err.message : 'Pull failed'
+        return { success: false, error: msg }
+      }
+    }
+
+    try {
+      ipcLog.info(`[agency] Cloning ${repo.url} to ${targetPath}`)
+      execSync(`git clone "${repo.url}" "${targetPath}"`, {
+        encoding: 'utf-8',
+        timeout: 120000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      updateClaudeMdAgencySection()
+      ipcLog.info(`[agency] Successfully imported ${repoId}`)
+      return { success: true }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? (err as { stderr?: string }).stderr || err.message : 'Clone failed'
+      ipcLog.error(`[agency] Failed to import ${repoId}:`, msg)
+      return { success: false, error: msg }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_UPDATE, (_event, repoId: string) => {
+    if (!isValidAgencyRepoId(repoId)) {
+      return { success: false, error: `Unknown repo: ${repoId}` }
+    }
+    const targetPath = getAgencyRepoPath(repoId)
+    if (!existsSync(join(targetPath, '.git'))) {
+      return { success: false, error: 'Repo not imported yet' }
+    }
+    try {
+      ipcLog.info(`[agency] Updating ${repoId}`)
+      execSync('git pull --ff-only', {
+        cwd: targetPath,
+        encoding: 'utf-8',
+        timeout: 60000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      updateClaudeMdAgencySection()
+      ipcLog.info(`[agency] Successfully updated ${repoId}`)
+      return { success: true }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? (err as { stderr?: string }).stderr || err.message : 'Pull failed'
+      ipcLog.error(`[agency] Failed to update ${repoId}:`, msg)
+      return { success: false, error: msg }
+    }
+  })
+
   // Git Bash detection and configuration (Windows only)
   ipcMain.handle(IPC_CHANNELS.GITBASH_CHECK, async () => {
     const platform = process.platform as 'win32' | 'darwin' | 'linux'

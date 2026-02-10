@@ -5,7 +5,8 @@ copyright: Copyright © 2025 W&S Agency
 electronVersion: "39.2.7"
 
 # Hook to compile macOS 26+ Liquid Glass icon after packaging
-afterPack: scripts/afterPack.cjs
+# Path resolved from CWD (workspace root), not from --project dir
+afterPack: apps/electron/scripts/afterPack.cjs
 
 directories:
   output: release
@@ -21,13 +22,6 @@ files:
   - resources/session-mcp-server/**/*
   # Note: Bundled assets (docs, themes, permissions, tool-icons) are in resources/
   # and copied to dist/resources/ by build:copy. They're included via dist/**/* above.
-  # Include network interceptor for API error capture and MCP schema injection
-  - packages/shared/src/network-interceptor.ts
-  - packages/shared/src/interceptor-common.ts
-  # Include bundled Bun runtime (platform-specific, set by build script)
-  - vendor/bun/**/*
-  # Include bundled Codex binary (platform-specific, downloaded by build script)
-  - vendor/codex/**/*
   # Exclude everything from node_modules (will use extraResources for SDK)
   - "!node_modules/**/*"
 
@@ -122,16 +116,11 @@ win:
     # Exclude binaries for other platforms
     - "!**/vendor/codex/darwin-*/**"
     - "!**/vendor/codex/linux-*/**"
-    # WORKAROUND: Exclude bun and codex from regular files on Windows.
-    # electron-builder's npm node module collector causes EBUSY errors when copying
-    # .exe files because it scans/locks files while simultaneously trying to copy them.
-    # Moving them to extraResources avoids this by copying before the collector runs.
-    # See: https://github.com/electron-userland/electron-builder/issues/8250
+    # Exclude vendor binaries from regular files (moved to extraResources or not available)
     - "!vendor/bun/**/*"
     - "!vendor/codex/**/*"
-  # Copy executables as extraResources to avoid EBUSY file locking (see comment above)
   extraResources:
-    - from: node_modules/@anthropic-ai/claude-agent-sdk
+    - from: ../../node_modules/@anthropic-ai/claude-agent-sdk
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
       filter:
         - "**/*"
@@ -139,10 +128,6 @@ win:
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
-    - from: vendor/bun/bun.exe
-      to: vendor/bun/bun.exe
-    - from: vendor/codex/win32-x64
-      to: app/vendor/codex/win32-x64
 
 nsis:
   oneClick: true

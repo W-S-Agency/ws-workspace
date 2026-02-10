@@ -148,8 +148,23 @@ function copyResources(): void {
 }
 
 // Build MCP servers for Codex sessions (one-time, no watch needed)
+// If src/ doesn't exist but dist/ does (OSS distribution), skip build.
 async function buildMcpServers(): Promise<void> {
   console.log("🌉 Building MCP servers for Codex sessions...");
+
+  const sessionSrc = join(SESSION_SERVER_DIR, "src/index.ts");
+  const bridgeSrc = join(BRIDGE_SERVER_DIR, "src/index.ts");
+  const sessionDist = join(SESSION_SERVER_DIR, "dist/index.js");
+  const bridgeDist = join(BRIDGE_SERVER_DIR, "dist/index.js");
+
+  // Skip build if source is missing but prebuilt dist exists (OSS fork)
+  const sessionNeedsBuild = existsSync(sessionSrc);
+  const bridgeNeedsBuild = existsSync(bridgeSrc);
+
+  if (!sessionNeedsBuild && existsSync(sessionDist) && !bridgeNeedsBuild && existsSync(bridgeDist)) {
+    console.log("✅ MCP servers already prebuilt (src/ not present), skipping build");
+    return;
+  }
 
   // Ensure dist directories exist
   const sessionDistDir = join(SESSION_SERVER_DIR, "dist");
@@ -157,33 +172,49 @@ async function buildMcpServers(): Promise<void> {
   if (!existsSync(sessionDistDir)) mkdirSync(sessionDistDir, { recursive: true });
   if (!existsSync(bridgeDistDir)) mkdirSync(bridgeDistDir, { recursive: true });
 
-  // Build both servers in parallel
-  const [sessionResult, bridgeResult] = await Promise.all([
-    runEsbuild(
+  // Build servers that have source available
+  const builds: Promise<{ success: boolean; error?: Error }>[] = [];
+
+  if (sessionNeedsBuild) {
+    builds.push(runEsbuild(
       "packages/session-mcp-server/src/index.ts",
       "packages/session-mcp-server/dist/index.js",
       {},
       { packagesExternal: true }
-    ),
-    runEsbuild(
+    ));
+  }
+  if (bridgeNeedsBuild) {
+    builds.push(runEsbuild(
       "packages/bridge-mcp-server/src/index.ts",
       "packages/bridge-mcp-server/dist/index.js",
       {},
       { packagesExternal: true }
-    ),
-  ]);
-
-  if (!sessionResult.success) {
-    console.error("❌ Session MCP server build failed:", sessionResult.error);
-    process.exit(1);
+    ));
   }
-  console.log("✅ Session MCP server built");
 
-  if (!bridgeResult.success) {
-    console.error("❌ Bridge MCP server build failed:", bridgeResult.error);
-    process.exit(1);
+  const results = await Promise.all(builds);
+  let idx = 0;
+
+  if (sessionNeedsBuild) {
+    if (!results[idx]!.success) {
+      console.error("❌ Session MCP server build failed:", results[idx]!.error);
+      process.exit(1);
+    }
+    console.log("✅ Session MCP server built");
+    idx++;
+  } else {
+    console.log("✅ Session MCP server: using prebuilt dist");
   }
-  console.log("✅ Bridge MCP server built");
+
+  if (bridgeNeedsBuild) {
+    if (!results[idx]!.success) {
+      console.error("❌ Bridge MCP server build failed:", results[idx]!.error);
+      process.exit(1);
+    }
+    console.log("✅ Bridge MCP server built");
+  } else {
+    console.log("✅ Bridge MCP server: using prebuilt dist");
+  }
 }
 
 // Get OAuth defines for esbuild API
@@ -213,7 +244,7 @@ function getElectronEnv(): Record<string, string> {
   // It checks: CODEX_PATH env var > bundled binary > local dev fork > system PATH.
   // You can override with CODEX_PATH env var if needed for debugging.
 
-  return {
+  const env = {
     ...process.env as Record<string, string>,
     VITE_DEV_SERVER_URL: `http://localhost:${vitePort}`,
     CRAFT_CONFIG_DIR: process.env.CRAFT_CONFIG_DIR || "",
@@ -221,7 +252,21 @@ function getElectronEnv(): Record<string, string> {
     CRAFT_DEEPLINK_SCHEME: process.env.CRAFT_DEEPLINK_SCHEME || "craftagents",
     CRAFT_INSTANCE_NUMBER: process.env.CRAFT_INSTANCE_NUMBER || "",
   };
+  // ELECTRON_RUN_AS_NODE forces Electron to run as plain Node.js,
+  // which disables the Electron runtime (app, BrowserWindow, etc.).
+  // Bun sets this when spawning scripts. Must be removed for Electron to work.
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
 }
+
+// Electron-specific packages that must NOT be bundled — they use require('electron')
+// internally and need Electron's runtime module resolution at load time.
+const ELECTRON_EXTERNALS = [
+  "electron",
+  "@sentry/electron", "@sentry/electron/main", "@sentry/electron/preload",
+  "electron-log", "electron-log/main",
+  "electron-updater",
+];
 
 // Run a one-shot esbuild using the JavaScript API
 async function runEsbuild(
@@ -237,7 +282,7 @@ async function runEsbuild(
       platform: "node",
       format: "cjs",
       outfile: join(ROOT_DIR, outfile),
-      external: ["electron"],
+      external: ELECTRON_EXTERNALS,
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       define: defines,
       logLevel: "warning",
@@ -413,7 +458,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
-    external: ["electron"],
+    external: ELECTRON_EXTERNALS,
     define: oauthDefines,
     logLevel: "info",
   });
@@ -428,7 +473,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/preload.cjs"),
-    external: ["electron"],
+    external: ELECTRON_EXTERNALS,
     logLevel: "info",
   });
   await preloadContext.watch();

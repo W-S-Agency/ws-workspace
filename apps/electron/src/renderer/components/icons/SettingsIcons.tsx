@@ -158,6 +158,21 @@ export const PreferencesIcon = ({ className }: IconProps) => (
   </svg>
 )
 
+/** Library/building icon for agency settings */
+export const AgencyIcon = ({ className }: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      d="M12 3L2 7V9H22V7L12 3ZM4 10V18H6V10H4ZM8 10V18H10V10H8ZM14 10V18H16V10H14ZM18 10V18H20V10H18ZM2 19V21H22V19H2Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /**
  * Map of settings subpage IDs to their icon components.
  * Used by both AppMenu and SettingsNavigator for consistent icons.
@@ -172,4 +187,5 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   labels: LabelsIcon,
   shortcuts: ShortcutsIcon,
   preferences: PreferencesIcon,
+  agency: AgencyIcon,
 }
