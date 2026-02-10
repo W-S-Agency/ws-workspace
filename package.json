@@ -1,7 +1,7 @@
 {
-  "name": "craft-agent",
+  "name": "ws-workspace",
   "version": "0.4.2",
-  "description": "Claude Code-like agent for Craft documents",
+  "description": "WS Workspace - Claude Code-like agent for documents",
   "type": "module",
   "private": true,
   "workspaces": [
@@ -28,7 +28,7 @@
     "electron:dev": "bun run scripts/electron-dev.ts",
     "electron:dev:terminal": "bun run scripts/electron-dev.ts --terminal",
     "electron:dev:menu": "bash scripts/electron-dev.sh",
-    "electron:dev:logs": "pgrep -f 'tail -f.*Craft Agents/main.log' > /dev/null || osascript -e \"tell application \\\"Terminal\\\" to do script \\\"$PWD/scripts/tail-electron-logs.sh\\\"\"",
+    "electron:dev:logs": "pgrep -f 'tail -f.*WS Workspace/main.log' > /dev/null || osascript -e \"tell application \\\"Terminal\\\" to do script \\\"$PWD/scripts/tail-electron-logs.sh\\\"\"",
     "sync-secrets": "bash scripts/sync-secrets.sh",
     "fresh-start": "bun run scripts/fresh-start.ts",
     "fresh-start:token": "bun run scripts/fresh-start.ts --token-only",
@@ -48,7 +48,8 @@
     "release": "bun run scripts/release.ts",
     "check-version": "bun run scripts/check-version.ts",
     "oss:sync": "bun run scripts/oss-sync.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "bun run scripts/patch-sdk-windows.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.947.0",

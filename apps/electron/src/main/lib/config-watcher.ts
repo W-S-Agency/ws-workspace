@@ -19,34 +19,34 @@ import { watch, existsSync, readdirSync, statSync, readFileSync, mkdirSync } fro
 import { join, dirname, basename, relative } from 'path';
 import { homedir } from 'os';
 import type { FSWatcher } from 'fs';
-import { debug, perf } from '@craft-agent/shared/utils';
-import { readJsonFileSync } from '@craft-agent/shared/utils/files';
-import { loadStoredConfig, type StoredConfig } from '@craft-agent/shared/config';
+import { debug, perf } from '@ws-workspace/shared/utils';
+import { readJsonFileSync } from '@ws-workspace/shared/utils/files';
+import { loadStoredConfig, type StoredConfig } from '@ws-workspace/shared/config';
 import {
   validateConfig,
   validatePreferences,
   validateSource,
   type ValidationResult,
-} from '@craft-agent/shared/config';
-import type { LoadedSource, SourceGuide } from '@craft-agent/shared/sources';
+} from '@ws-workspace/shared/config';
+import type { LoadedSource, SourceGuide } from '@ws-workspace/shared/sources';
 import {
   loadSource,
   loadWorkspaceSources,
   loadSourceGuide,
   sourceNeedsIconDownload,
   downloadSourceIcon,
-} from '@craft-agent/shared/sources';
-import { permissionsConfigCache, getAppPermissionsDir } from '@craft-agent/shared/agent';
-import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '@craft-agent/shared/workspaces';
-import type { LoadedSkill } from '@craft-agent/shared/skills';
-import { loadSkill, loadWorkspaceSkills, skillNeedsIconDownload, downloadSkillIcon } from '@craft-agent/shared/skills';
+} from '@ws-workspace/shared/sources';
+import { permissionsConfigCache, getAppPermissionsDir } from '@ws-workspace/shared/agent';
+import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '@ws-workspace/shared/workspaces';
+import type { LoadedSkill } from '@ws-workspace/shared/skills';
+import { loadSkill, loadWorkspaceSkills, skillNeedsIconDownload, downloadSkillIcon } from '@ws-workspace/shared/skills';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
   downloadStatusIcon,
-} from '@craft-agent/shared/statuses';
-import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from '@craft-agent/shared/config';
-import type { ThemeOverrides, PresetTheme } from '@craft-agent/shared/config';
+} from '@ws-workspace/shared/statuses';
+import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from '@ws-workspace/shared/config';
+import type { ThemeOverrides, PresetTheme } from '@ws-workspace/shared/config';
 
 // ============================================================
 // Constants

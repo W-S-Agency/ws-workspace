@@ -5,9 +5,9 @@
 import { Sun, Moon, X } from 'lucide-react'
 
 /**
- * CraftAgentLogo - The Craft Agent "C" logo
+ * WSWorkspaceLogo - The WS Workspace logo
  */
-function CraftAgentLogo({ className }: { className?: string }) {
+function WSWorkspaceLogo({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -40,9 +40,9 @@ export function Header({ hasSession, sessionTitle, isDark, onToggleTheme, onClea
       <a
         href="https://agents.craft.do"
         className="hover:opacity-80 transition-opacity"
-        title="Craft Agent"
+        title="WS Workspace"
       >
-        <CraftAgentLogo className="w-6 h-6 text-[#9570BE]" />
+        <WSWorkspaceLogo className="w-6 h-6 text-[#9570BE]" />
       </a>
 
       {/* Session title - centered */}

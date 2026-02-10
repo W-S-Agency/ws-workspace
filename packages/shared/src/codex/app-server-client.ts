@@ -33,7 +33,7 @@ import type {
   AuthStatusChangeNotification,
   LoginChatGptCompleteNotification,
   SessionConfiguredNotification,
-} from '@craft-agent/codex-types';
+} from '@ws-workspace/codex-types';
 
 import type {
   ThreadStartParams,
@@ -71,7 +71,7 @@ import type {
   TerminalInteractionNotification,
   ConfigWarningNotification,
   WindowsWorldWritableWarningNotification,
-} from '@craft-agent/codex-types/v2';
+} from '@ws-workspace/codex-types/v2';
 
 // ============================================================
 // Types
@@ -115,7 +115,7 @@ export interface ChatGptTokenRefreshResponse {
 }
 
 // ============================================================
-// CRAFT AGENTS: PreToolUse Hook Types
+// WS WORKSPACE: PreToolUse Hook Types
 // ============================================================
 
 /**
@@ -283,7 +283,7 @@ export interface AppServerEvents {
   'item/commandExecution/requestApproval': CommandExecutionRequestApprovalParams & { requestId: RequestId };
   'item/fileChange/requestApproval': FileChangeRequestApprovalParams & { requestId: RequestId };
 
-  // CRAFT AGENTS: PreToolUse hook request
+  // WS WORKSPACE: PreToolUse hook request
   // Sent BEFORE tool execution to allow client to block/modify/allow
   'item/toolCall/preExecute': ToolCallPreExecuteParams & { requestId: RequestId };
 
@@ -675,7 +675,7 @@ export class AppServerClient extends EventEmitter {
   /**
    * Login with ChatGPT external tokens (chatgptAuthTokens mode).
    *
-   * This allows Craft Agent to own the OAuth flow and inject tokens into Codex.
+   * This allows WS Workspace to own the OAuth flow and inject tokens into Codex.
    * The tokens are stored in memory only - Codex will request refresh via
    * the `account/chatgptAuthTokens/refresh` server request when needed.
    *
@@ -782,7 +782,7 @@ export class AppServerClient extends EventEmitter {
   }
 
   /**
-   * CRAFT AGENTS: Respond to a PreToolUse hook request.
+   * WS WORKSPACE: Respond to a PreToolUse hook request.
    *
    * This is called BEFORE tool execution. The decision can:
    * - Allow: Continue with original tool execution
@@ -840,7 +840,7 @@ export class AppServerClient extends EventEmitter {
   private async initialize(): Promise<void> {
     const params: InitializeParams = {
       clientInfo: {
-        name: 'Craft Agent',
+        name: 'WS Workspace',
         title: null,
         version: '0.3.1', // TODO: Get from package.json
       },
@@ -951,7 +951,7 @@ export class AppServerClient extends EventEmitter {
         });
         break;
 
-      // CRAFT AGENTS: PreToolUse hook request
+      // WS WORKSPACE: PreToolUse hook request
       // Sent BEFORE tool execution to allow client to block/modify/allow
       case 'item/toolCall/preExecute':
         this.emit('item/toolCall/preExecute', {

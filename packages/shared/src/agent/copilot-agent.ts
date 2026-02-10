@@ -8,7 +8,7 @@
  * Auth is GitHub OAuth. Tokens stored at `llm_oauth::copilot`.
  */
 
-import type { AgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent } from '@ws-workspace/core/types';
 import type { FileAttachment } from '../utils/files.ts';
 import type { ThinkingLevel } from './thinking-levels.ts';
 import { type PermissionMode, shouldAllowToolInMode } from './mode-manager.ts';
@@ -93,7 +93,7 @@ import {
 // Large response handling
 import { handleLargeResponse, estimateTokens, TOKEN_LIMIT } from '../utils/large-response.ts';
 
-// System prompt for Craft Agent context
+// System prompt for WS Workspace context
 import { getSystemPrompt } from '../prompts/system.ts';
 
 // Credential manager for token storage
@@ -1253,7 +1253,7 @@ export class CopilotAgent extends BaseAgent {
   private static readonly BUILT_IN_MCP_SERVERS = new Set([
     'preferences',
     'session',
-    'craft-agents-docs',
+    'ws-workspace-docs',
     'api-bridge',
   ]);
 

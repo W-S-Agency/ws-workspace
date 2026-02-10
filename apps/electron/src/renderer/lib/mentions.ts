@@ -8,13 +8,13 @@
  * Bracket syntax allows mentions anywhere in text without word boundaries.
  */
 
-import type { ContentBadge } from '@craft-agent/core'
+import type { ContentBadge } from '@ws-workspace/core'
 import type { MentionItemType } from '@/components/ui/mention-menu'
 import type { LoadedSkill, LoadedSource } from '../../shared/types'
 import { getSourceIconSync, getSkillIconSync } from './icon-cache'
 
 // Import and re-export parsing functions from shared (pure string operations, no renderer deps)
-import { parseMentions, stripAllMentions, type ParsedMentions } from '@craft-agent/shared/mentions'
+import { parseMentions, stripAllMentions, type ParsedMentions } from '@ws-workspace/shared/mentions'
 export { parseMentions, stripAllMentions, type ParsedMentions }
 
 // ============================================================================

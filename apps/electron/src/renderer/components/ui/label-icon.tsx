@@ -5,16 +5,16 @@
  * with the icon size variant for consistent inline display.
  */
 
-import type { IconSize } from '@craft-agent/shared/icons'
-import type { EntityColor } from '@craft-agent/shared/colors'
-import { resolveEntityColor } from '@craft-agent/shared/colors'
+import type { IconSize } from '@ws-workspace/shared/icons'
+import type { EntityColor } from '@ws-workspace/shared/colors'
+import { resolveEntityColor } from '@ws-workspace/shared/colors'
 import { useTheme } from '@/context/ThemeContext'
 import { cn } from '@/lib/utils'
 import { Hash, CalendarDays, Type } from 'lucide-react'
-import type { LabelConfig } from '@craft-agent/shared/labels'
+import type { LabelConfig } from '@ws-workspace/shared/labels'
 
 interface LabelIconProps {
-  /** Label configuration (matches LabelConfig from @craft-agent/shared/labels) */
+  /** Label configuration (matches LabelConfig from @ws-workspace/shared/labels) */
   label: {
     id: string
     /** EntityColor: system color string or custom color object */

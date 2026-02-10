@@ -1,12 +1,12 @@
 {
-  "name": "@craft-agent/electron",
+  "name": "@ws-workspace/electron",
   "version": "0.4.2",
-  "description": "Electron desktop app for Craft Agents",
+  "description": "Electron desktop app for WS Workspace",
   "main": "dist/main.cjs",
   "private": true,
   "author": {
-    "name": "Craft Docs Ltd.",
-    "email": "support@craft.do"
+    "name": "W&S Agency",
+    "email": "support@ws-agency.com"
   },
   "homepage": "https://agents.craft.do",
   "license": "MIT",
@@ -35,9 +35,9 @@
     "lint:fix": "eslint src/ --fix"
   },
   "dependencies": {
-    "@craft-agent/core": "workspace:*",
-    "@craft-agent/shared": "workspace:*",
-    "@craft-agent/ui": "workspace:*",
+    "@ws-workspace/core": "workspace:*",
+    "@ws-workspace/shared": "workspace:*",
+    "@ws-workspace/ui": "workspace:*",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

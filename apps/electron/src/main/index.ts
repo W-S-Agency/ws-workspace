@@ -70,19 +70,19 @@ import { registerIpcHandlers } from './ipc'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
-import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
-import { initializeDocs } from '@craft-agent/shared/docs'
-import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
-import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
-import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
-import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
-import { setVendorRoot } from '@craft-agent/shared/codex'
-import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
+import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@ws-workspace/shared/config'
+import { getDefaultWorkspacesDir } from '@ws-workspace/shared/workspaces'
+import { initializeDocs } from '@ws-workspace/shared/docs'
+import { initializeReleaseNotes } from '@ws-workspace/shared/release-notes'
+import { ensureDefaultPermissions } from '@ws-workspace/shared/agent/permissions-config'
+import { ensureToolIcons, ensurePresetThemes } from '@ws-workspace/shared/config'
+import { setBundledAssetsRoot } from '@ws-workspace/shared/utils'
+import { setVendorRoot } from '@ws-workspace/shared/codex'
+import { setPowerShellValidatorRoot } from '@ws-workspace/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
-import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
+import { setPerfEnabled, enableDebug } from '@ws-workspace/shared/utils'
 import { initNotificationService, clearBadgeCount, initBadgeIcon, initInstanceBadge } from './notifications'
 import { checkForUpdatesOnLaunch, setWindowManager as setAutoUpdateWindowManager, isUpdating } from './auto-update'
 
@@ -107,8 +107,8 @@ let sessionManager: SessionManager | null = null
 let pendingDeepLink: string | null = null
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
-// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
-app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
+// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "WS Workspace [1]")
+app.setName(process.env.CRAFT_APP_NAME || 'WS Workspace')
 
 // Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
@@ -242,10 +242,10 @@ app.whenReady().then(async () => {
   // Ensure default permissions file exists (copies bundled default.json on first run)
   ensureDefaultPermissions()
 
-  // Seed tool icons to ~/.craft-agent/tool-icons/ (copies bundled SVGs on first run)
+  // Seed tool icons to ~/.ws-workspace/tool-icons/ (copies bundled SVGs on first run)
   ensureToolIcons()
 
-  // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
+  // Seed preset themes to ~/.ws-workspace/themes/ (copies bundled theme JSONs on first run)
   ensurePresetThemes()
 
   // Register thumbnail:// protocol handler (scheme was registered earlier, before app.whenReady)
@@ -307,7 +307,7 @@ app.whenReady().then(async () => {
     // Run credential health check at startup to detect issues early
     // (corruption, machine migration, missing credentials for default connection)
     try {
-      const { getCredentialManager } = await import('@craft-agent/shared/credentials')
+      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
       const credentialManager = getCredentialManager()
       const health = await credentialManager.checkHealth()
       if (!health.healthy) {
@@ -326,7 +326,7 @@ app.whenReady().then(async () => {
     // Runs after init so config and auth state are available.
     // Derives values from the default LLM connection instead of legacy config fields.
     try {
-      const { getLlmConnection, getDefaultLlmConnection } = await import('@craft-agent/shared/config')
+      const { getLlmConnection, getDefaultLlmConnection } = await import('@ws-workspace/shared/config')
       const workspaces = getWorkspaces()
       const defaultConnSlug = getDefaultLlmConnection()
       const defaultConn = defaultConnSlug ? getLlmConnection(defaultConnSlug) : null

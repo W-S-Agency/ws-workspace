@@ -5,7 +5,7 @@
  * instance of these tools with session-specific callbacks and state.
  *
  * This file is a thin adapter that wraps the shared handlers from
- * @craft-agent/session-tools-core for use with the Claude SDK.
+ * @ws-workspace/session-tools-core for use with the Claude SDK.
  *
  * Tools included:
  * - SubmitPlan: Submit a plan file for user review/display
@@ -47,9 +47,9 @@ import {
   // Types
   type ToolResult,
   type AuthRequest,
-} from '@craft-agent/session-tools-core';
+} from '@ws-workspace/session-tools-core';
 
-// Re-export types for backward compatibility
+// Re-export types for backward compatibility (from @ws-workspace/session-tools-core)
 export type {
   CredentialInputMode,
   AuthRequestType,
@@ -63,7 +63,7 @@ export type {
   GoogleService,
   SlackService,
   MicrosoftService,
-} from '@craft-agent/session-tools-core';
+} from '@ws-workspace/session-tools-core';
 
 // ============================================================
 // Session-Scoped Tool Callbacks
@@ -261,18 +261,18 @@ The plan will be displayed to the user in a special formatted view.
 - The conversation will resume when the user responds (accept, modify, or reject the plan)
 - Do NOT include any text or tool calls after SubmitPlan - they will not be executed`,
 
-  config_validate: `Validate Craft Agent configuration files.
+  config_validate: `Validate WS Workspace configuration files.
 
 Use this after editing configuration files to check for errors before they take effect.
 Returns structured validation results with errors, warnings, and suggestions.
 
 **Targets:**
-- \`config\`: Validates ~/.craft-agent/config.json (workspaces, model, settings)
-- \`sources\`: Validates all sources in ~/.craft-agent/workspaces/{workspace}/sources/*/config.json
-- \`statuses\`: Validates ~/.craft-agent/workspaces/{workspace}/statuses/config.json
-- \`preferences\`: Validates ~/.craft-agent/preferences.json
+- \`config\`: Validates ~/.ws-workspace/config.json (workspaces, model, settings)
+- \`sources\`: Validates all sources in ~/.ws-workspace/workspaces/{workspace}/sources/*/config.json
+- \`statuses\`: Validates ~/.ws-workspace/workspaces/{workspace}/statuses/config.json
+- \`preferences\`: Validates ~/.ws-workspace/preferences.json
 - \`permissions\`: Validates permissions.json files
-- \`tool-icons\`: Validates ~/.craft-agent/tool-icons/tool-icons.json
+- \`tool-icons\`: Validates ~/.ws-workspace/tool-icons/tool-icons.json
 - \`all\`: Validates all configuration files
 
 **Reference:** ${DOC_REFS.sources}`,

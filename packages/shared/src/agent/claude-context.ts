@@ -23,7 +23,7 @@ import type {
   McpValidationResult,
   ApiTestResult,
   SourceConfig,
-} from '@craft-agent/session-tools-core';
+} from '@ws-workspace/session-tools-core';
 import {
   validateConfig,
   validateSource,
@@ -66,7 +66,7 @@ import { debug } from '../utils/debug.ts';
 import { getSessionPlansPath } from '../sessions/storage.ts';
 
 // Re-export types that may be needed by consumers
-export type { SessionToolContext, SessionToolCallbacks } from '@craft-agent/session-tools-core';
+export type { SessionToolContext, SessionToolCallbacks } from '@ws-workspace/session-tools-core';
 
 /**
  * Options for creating a Claude context

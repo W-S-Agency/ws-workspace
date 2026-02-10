@@ -1,6 +1,6 @@
-# Craft Agents Electron App
+# WS Workspace Electron App
 
-The primary desktop interface for Craft Agents, built with Electron + React. Provides a multi-session inbox with chat interface for interacting with Claude via Craft workspaces.
+The primary desktop interface for WS Workspace, built with Electron + React. Provides a multi-session inbox with chat interface for interacting with Claude via workspaces.
 
 ## Quick Start
 
@@ -156,7 +156,7 @@ bun run sync-secrets
 **That's it!** Now `bun run electron:dev` and `bun run electron:start` work without prompts.
 
 **How it works:**
-- `.env.1password` contains `op://` references to the `Dev_Craft_Agents` vault
+- `.env.1password` contains `op://` references to the `Dev_WS_Workspace` vault
 - `bun run sync-secrets` resolves references → writes `.env` (gitignored)
 - Secrets are baked into the build at compile time via esbuild `--define` flags
 

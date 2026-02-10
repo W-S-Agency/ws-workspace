@@ -200,13 +200,46 @@ export function getDefaultOptions(): Partial<Options> {
         if (customInterceptorPath) {
             executableArgs.push('--preload', customInterceptorPath);
         }
+
+        // Windows fix: ensure the SDK subprocess can find bash.exe and run cmd.exe.
+        // The SDK uses execSync('dir "path"') to verify bash exists, which needs cmd.exe.
+        // When Electron inherits env from Git Bash/MSYS, SHELL may be '/usr/bin/bash'
+        // (a Unix-style path invalid outside MSYS). Bun's execSync may use SHELL instead
+        // of ComSpec, causing the 'dir' command to fail. Fix by:
+        // 1. Ensuring ComSpec points to cmd.exe
+        // 2. Removing Unix-style SHELL paths
+        // 3. Auto-detecting and setting CLAUDE_CODE_GIT_BASH_PATH if not already set
+        const baseEnv = { ...process.env };
+        if (process.platform === 'win32') {
+            baseEnv.ComSpec = process.env.ComSpec || 'C:\\Windows\\system32\\cmd.exe';
+            // Remove MSYS-style SHELL (e.g., '/usr/bin/bash') — invalid outside MSYS context
+            if (baseEnv.SHELL && !baseEnv.SHELL.includes(':\\')) {
+                delete baseEnv.SHELL;
+            }
+            // Auto-detect bash.exe if not configured — the SDK's dir-based check
+            // can fail in Electron subprocess, so we verify with existsSync here
+            if (!baseEnv.CLAUDE_CODE_GIT_BASH_PATH) {
+                const bashCandidates = [
+                    'C:\\Program Files\\Git\\bin\\bash.exe',
+                    'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+                    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+                ];
+                for (const candidate of bashCandidates) {
+                    if (existsSync(candidate)) {
+                        baseEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
         return {
             pathToClaudeCodeExecutable: customPathToClaudeCodeExecutable,
             // Use custom executable if set, otherwise default to 'bun'
             executable: (customExecutable || 'bun') as 'bun',
             executableArgs,
             env: {
-                ...process.env,
+                ...baseEnv,
                 ... optionsEnv,
                 // Propagate debug mode from argv flag OR existing env var
                 CRAFT_DEBUG: (process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1') ? '1' : '0',
