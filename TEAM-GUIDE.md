@@ -204,6 +204,55 @@ git diff main upstream/main --stat
 
 ---
 
+## 4. Автообновления (для нетехнических коллег)
+
+Приложение обновляется автоматически через GitHub Releases. Коллегам не нужно ничего делать — при запуске приложение само проверяет наличие обновлений.
+
+### Как это работает для коллег
+1. Открывают WS Workspace как обычно
+2. Если есть обновление — приложение скачает его в фоне
+3. При следующем перезапуске — обновление установится автоматически
+4. Или в меню появится "Install Update..." для немедленной установки
+
+### Как выпустить обновление (для разработчика)
+
+```bash
+cd ws-workspace
+git pull origin main
+
+# 1. Обновить версию в package.json
+# apps/electron/package.json → "version": "0.4.0"
+
+# 2. Собрать
+bun install
+bun run electron:dist:win    # и/или :mac, :linux
+
+# 3. Создать GitHub Release с артефактами
+gh release create v0.4.0 \
+  "apps/electron/release/WS-Workspace-x64.exe" \
+  "apps/electron/release/latest.yml" \
+  --title "v0.4.0" \
+  --notes "Описание изменений"
+```
+
+**Важно**: в Release должны быть загружены:
+- `WS-Workspace-x64.exe` (Windows)
+- `latest.yml` (манифест для electron-updater)
+- `WS-Workspace-arm64.dmg` и `latest-mac.yml` (macOS, если нужно)
+
+После этого все установленные копии подхватят обновление автоматически.
+
+### Первая установка коллегам
+
+Для первой установки нужно вручную передать файл:
+1. Собрать билд: `bun run electron:dist:win`
+2. Файл `WS-Workspace-x64.exe` из `apps/electron/release/`
+3. Отправить коллеге (Slack, email, облако)
+4. Коллега запускает .exe → устанавливается в `%LOCALAPPDATA%\Programs\`
+5. Все дальнейшие обновления — автоматически через GitHub Releases
+
+---
+
 ## Контакты
 
 - Репозиторий: https://github.com/W-S-Agency/ws-workspace

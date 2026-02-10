@@ -40,10 +40,13 @@ files:
 extraMetadata:
   main: dist/main.cjs
 
-# Auto-update: electron-updater fetches from this URL for update manifests (.yml files)
+# Auto-update via GitHub Releases
+# electron-updater checks for new releases in this repo automatically.
+# To publish: create a GitHub Release with the built artifacts.
 publish:
-  provider: generic
-  url: https://agents.craft.do/electron/latest
+  provider: github
+  owner: W-S-Agency
+  repo: ws-workspace
 
 # Disable ASAR to avoid decompression overhead and click delays
 asar: false
