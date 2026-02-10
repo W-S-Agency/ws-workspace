@@ -1,0 +1,93 @@
+name: Build & Release
+
+on:
+  # Trigger on GitHub Release creation
+  release:
+    types: [created]
+  # Manual trigger for testing
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build & package
+        run: bun run electron:dist:win
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: apps/electron/release/WS-Workspace-x64.exe
+
+      - name: Attach to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/electron/release/WS-Workspace-x64.exe
+            apps/electron/release/latest.yml
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate macOS icon (icns) from source PNG
+        run: |
+          cd apps/electron/resources
+          mkdir -p icon.iconset
+          sips -z 16 16 source.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32 source.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 source.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64 source.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 source.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256 source.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 source.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512 source.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 source.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 source.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o icon.icns
+          rm -rf icon.iconset
+
+      - name: Build & package (arm64)
+        run: bun run electron:build && npx electron-builder --config electron-builder.yml --project apps/electron --mac --arm64
+
+      - name: Build & package (x64)
+        run: npx electron-builder --config electron-builder.yml --project apps/electron --mac --x64
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installers
+          path: |
+            apps/electron/release/WS-Workspace-arm64.dmg
+            apps/electron/release/WS-Workspace-x64.dmg
+
+      - name: Attach to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/electron/release/WS-Workspace-arm64.dmg
+            apps/electron/release/WS-Workspace-x64.dmg
+            apps/electron/release/latest-mac.yml
