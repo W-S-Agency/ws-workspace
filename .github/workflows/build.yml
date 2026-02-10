@@ -1,9 +1,9 @@
 name: Build & Release
 
 on:
-  # Trigger on GitHub Release creation
+  # Trigger on GitHub Release publish
   release:
-    types: [created]
+    types: [published]
   # Manual trigger for testing
   workflow_dispatch:
 
