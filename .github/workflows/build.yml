@@ -23,8 +23,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build & package
-        run: bun run electron:dist:win
+      - name: Build app
+        run: bun run electron:build
+
+      - name: Package installer
+        run: npx electron-builder --config electron-builder.yml --project apps/electron --win --publish never
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -69,11 +72,14 @@ jobs:
           iconutil -c icns icon.iconset -o icon.icns
           rm -rf icon.iconset
 
-      - name: Build & package (arm64)
-        run: bun run electron:build && npx electron-builder --config electron-builder.yml --project apps/electron --mac --arm64
+      - name: Build app
+        run: bun run electron:build
 
-      - name: Build & package (x64)
-        run: npx electron-builder --config electron-builder.yml --project apps/electron --mac --x64
+      - name: Package DMG (arm64)
+        run: npx electron-builder --config electron-builder.yml --project apps/electron --mac --arm64 --publish never
+
+      - name: Package DMG (x64)
+        run: npx electron-builder --config electron-builder.yml --project apps/electron --mac --x64 --publish never
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
