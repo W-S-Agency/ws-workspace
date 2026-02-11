@@ -1294,14 +1294,14 @@ export class SessionManager {
       const monorepoRoot = join(basePath, '..', '..')
       interceptorPath = join(monorepoRoot, interceptorRelativePath)
     }
-    if (!existsSync(interceptorPath)) {
-      const error = `Network interceptor not found at ${interceptorPath}. The app package may be corrupted.`
-      sessionLog.error(error)
-      throw new Error(error)
+    if (existsSync(interceptorPath)) {
+      // Set interceptor path (used for --preload flag with bun)
+      sessionLog.info('Setting interceptorPath:', interceptorPath)
+      setInterceptorPath(interceptorPath)
+    } else {
+      // Interceptor is optional — enriches tool metadata but not required for tool execution
+      sessionLog.warn('Network interceptor not found — tool metadata enrichment disabled')
     }
-    // Set interceptor path (used for --preload flag with bun)
-    sessionLog.info('Setting interceptorPath:', interceptorPath)
-    setInterceptorPath(interceptorPath)
 
     // Resolve Copilot network interceptor (loaded via NODE_OPTIONS="--require ..." into Copilot CLI subprocess)
     // Must be bundled CJS since it runs under Electron's Node.js, not Bun
