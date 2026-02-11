@@ -61,10 +61,11 @@ mac:
       arch:
         - arm64
         - x64
-  hardenedRuntime: true
+  # Hardened runtime & entitlements — enable when code signing with Apple Developer ID
+  # hardenedRuntime: true
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
   extraResources:
     - from: ../../node_modules/@anthropic-ai/claude-agent-sdk
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
