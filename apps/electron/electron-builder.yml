@@ -78,6 +78,8 @@ mac:
   files:
     - "!**/vendor/codex/linux-*/**"
     - "!**/vendor/codex/win32-*/**"
+    # Bun runtime — on macOS it lives in app files (app.getAppPath())
+    - vendor/bun/**/*
   # Use predictable naming for macOS packages (applies to zip; dmg uses its own config below)
   artifactName: "WS-Workspace-${arch}.${ext}"
   # Code signing & notarization (disabled by default for local builds)
@@ -117,9 +119,9 @@ win:
     # Exclude binaries for other platforms
     - "!**/vendor/codex/darwin-*/**"
     - "!**/vendor/codex/linux-*/**"
-    # Exclude vendor binaries from regular files (moved to extraResources or not available)
-    - "!vendor/bun/**/*"
     - "!vendor/codex/**/*"
+    # On Windows, bun.exe goes to extraResources (process.resourcesPath) to avoid EBUSY
+    - "!vendor/bun/**/*"
   extraResources:
     - from: ../../node_modules/@anthropic-ai/claude-agent-sdk
       to: app/node_modules/@anthropic-ai/claude-agent-sdk
@@ -129,6 +131,9 @@ win:
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
+    # Bun runtime — on Windows it must be in extraResources (process.resourcesPath)
+    - from: vendor/bun/bun.exe
+      to: vendor/bun/bun.exe
 
 nsis:
   oneClick: true
@@ -158,3 +163,5 @@ linux:
   files:
     - "!**/vendor/codex/darwin-*/**"
     - "!**/vendor/codex/win32-*/**"
+    # Bun runtime — on Linux it lives in app files (app.getAppPath())
+    - vendor/bun/**/*

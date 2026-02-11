@@ -23,6 +23,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Bundle bun runtime
+        shell: bash
+        run: |
+          mkdir -p apps/electron/vendor/bun
+          cp "$(which bun).exe" apps/electron/vendor/bun/bun.exe
+
       - name: Build app
         run: bun run electron:build
 
@@ -71,6 +77,11 @@ jobs:
           sips -z 1024 1024 source.png --out icon.iconset/icon_512x512@2x.png
           iconutil -c icns icon.iconset -o icon.icns
           rm -rf icon.iconset
+
+      - name: Bundle bun runtime
+        run: |
+          mkdir -p apps/electron/vendor/bun
+          cp "$(which bun)" apps/electron/vendor/bun/bun
 
       - name: Build app
         run: bun run electron:build

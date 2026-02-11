@@ -110,11 +110,32 @@ function getBundledBunPath(): string | undefined {
   const bunPath = join(bunBasePath, 'vendor', 'bun', bunBinary)
 
   if (!existsSync(bunPath)) {
-    sessionLog.warn(`Bundled Bun not found at ${bunPath}`)
+    sessionLog.warn(`Bundled Bun not found at ${bunPath}, looking for system bun...`)
+    // Fallback: try to find system bun on PATH
+    const systemBun = findSystemBun()
+    if (systemBun) {
+      sessionLog.info(`Using system bun: ${systemBun}`)
+      return systemBun
+    }
     return undefined
   }
 
   return bunPath
+}
+
+/** Find bun on the system PATH as a fallback when bundled bun is missing. */
+function findSystemBun(): string | undefined {
+  const { execSync } = require('child_process')
+  try {
+    const cmd = process.platform === 'win32' ? 'where bun' : 'which bun'
+    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0]
+    if (result && existsSync(result)) {
+      return result
+    }
+  } catch {
+    // bun not found in PATH
+  }
+  return undefined
 }
 
 /**
@@ -1298,12 +1319,12 @@ export class SessionManager {
       sessionLog.warn('Copilot network interceptor not found — run `bun run build:copilot-interceptor` in apps/electron/')
     }
 
-    // In packaged app: use bundled Bun binary
+    // In packaged app: use bundled Bun binary (or fall back to system bun)
     // In development: use system 'bun' command (no need to set executable)
     const bundledBunPath = getBundledBunPath()
     if (app.isPackaged) {
       if (!bundledBunPath) {
-        const error = 'Bundled Bun runtime not found. The app package may be corrupted.'
+        const error = 'Bun runtime not found. Install bun (https://bun.sh) or rebuild the app with vendor/bun.'
         sessionLog.error(error)
         throw new Error(error)
       }
