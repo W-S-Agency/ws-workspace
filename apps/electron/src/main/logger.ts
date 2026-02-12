@@ -38,8 +38,17 @@ if (isDebugMode) {
   }
   log.transports.console.level = 'debug'
 } else {
-  // Disable file and console transports in production
-  log.transports.file.level = false
+  // Production: enable file logging (warning+) for diagnostics, disable console
+  log.transports.file.format = ({ message }) => [
+    JSON.stringify({
+      timestamp: message.date.toISOString(),
+      level: message.level,
+      scope: message.scope,
+      message: message.data,
+    }),
+  ]
+  log.transports.file.maxSize = 5 * 1024 * 1024 // 5MB
+  log.transports.file.level = 'info'
   log.transports.console.level = false
 }
 
@@ -56,7 +65,6 @@ export const searchLog = log.scope('search')
  * Returns undefined if file logging is disabled.
  */
 export function getLogFilePath(): string | undefined {
-  if (!isDebugMode) return undefined
   return log.transports.file.getFile()?.path
 }
 

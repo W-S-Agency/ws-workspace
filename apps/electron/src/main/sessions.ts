@@ -1266,7 +1266,8 @@ export class SessionManager {
       sessionLog.error(error)
       throw new Error(error)
     }
-    sessionLog.info('Setting pathToClaudeCodeExecutable:', cliPath)
+    sessionLog.warn('[init] basePath:', basePath)
+    sessionLog.warn('[init] cliPath:', cliPath)
     setPathToClaudeCodeExecutable(cliPath)
 
     // Resolve path to @github/copilot CLI (for CopilotAgent)
@@ -1328,7 +1329,7 @@ export class SessionManager {
         sessionLog.error(error)
         throw new Error(error)
       }
-      sessionLog.info('Setting executable:', bundledBunPath)
+      sessionLog.warn('[init] executable (bun):', bundledBunPath)
       setExecutable(bundledBunPath)
     }
 
@@ -2588,6 +2589,9 @@ export class SessionManager {
           } : undefined,
         })
         sessionLog.info(`Created Claude agent for session ${managed.id}${managed.sdkSessionId ? ' (resuming)' : ''}`)
+
+        // Route onDebug to production log file for diagnostics
+        ;(managed.agent as CraftAgent).onDebug = (msg: string) => sessionLog.info('[agent]', msg)
       }
 
       // Signal that the agent instance is ready (unblocks title generation)
@@ -3914,13 +3918,29 @@ export class SessionManager {
       const chatIterator = agent.chat(message, attachments)
       sessionLog.info('Got chat iterator, starting iteration...')
 
+      // Watchdog: warn if SDK produces no events within 30s (likely MCP server init hang)
+      let firstEventReceived = false
+      const initWatchdog = setTimeout(() => {
+        if (!firstEventReceived) {
+          sessionLog.error(`SDK INIT TIMEOUT: No events received for session ${managed.id} after 30s. Possible MCP server initialization hang.`)
+        }
+      }, 30_000)
+
       for await (const event of chatIterator) {
+        if (!firstEventReceived) {
+          firstEventReceived = true
+          clearTimeout(initWatchdog)
+          sessionLog.info(`First SDK event received (${event.type})`)
+        }
         // Log events (skip noisy text_delta)
         if (event.type !== 'text_delta') {
           if (event.type === 'tool_start') {
             sessionLog.info(`tool_start: ${event.toolName} (${event.toolUseId})`)
           } else if (event.type === 'tool_result') {
             sessionLog.info(`tool_result: ${event.toolUseId} isError=${event.isError}`)
+            if (event.isError) {
+              sessionLog.warn(`TOOL ERROR [${event.toolName || 'unknown'}]: ${typeof event.result === 'string' ? event.result.slice(0, 500) : JSON.stringify(event.result)?.slice(0, 500)}`)
+            }
           } else {
             sessionLog.info('Got event:', event.type)
           }
@@ -3983,6 +4003,9 @@ export class SessionManager {
         // This ensures we don't lose in-flight messages.
       }
 
+      // Clean up watchdog on normal exit
+      clearTimeout(initWatchdog)
+
       // Loop exited - either via complete event (normal) or generator ended after soft interrupt
       if (managed.stopRequested) {
         sessionLog.info('Chat loop completed after stop request - events drained successfully')
@@ -3991,6 +4014,8 @@ export class SessionManager {
         sessionLog.info('Chat loop exited unexpectedly')
       }
     } catch (error) {
+      // Clean up watchdog on error
+      clearTimeout(initWatchdog)
       // Check if this is an abort error (expected when interrupted)
       const isAbortError = error instanceof Error && (
         error.name === 'AbortError' ||
@@ -4015,7 +4040,14 @@ export class SessionManager {
       } else {
         sessionLog.error('Error in chat:', error)
         sessionLog.error('Error message:', error instanceof Error ? error.message : String(error))
+        sessionLog.error('Error code:', (error as NodeJS.ErrnoException)?.code)
+        sessionLog.error('Error errno:', (error as NodeJS.ErrnoException)?.errno)
+        sessionLog.error('Error syscall:', (error as NodeJS.ErrnoException)?.syscall)
         sessionLog.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
+        // Log last stderr output from SDK subprocess for additional context
+        if (managed.agent && 'lastStderrOutput' in managed.agent) {
+          sessionLog.error('Last SDK stderr:', (managed.agent as CraftAgent).lastStderrOutput)
+        }
 
         // Report chat/SDK errors to Sentry for crash tracking
         Sentry.captureException(error, {

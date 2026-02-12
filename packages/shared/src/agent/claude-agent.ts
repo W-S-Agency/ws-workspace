@@ -42,6 +42,7 @@ import {
 import { type PermissionsContext, permissionsConfigCache } from './permissions-config.ts';
 import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { readFileSync } from 'fs';
+import { homedir } from 'os';
 import { expandPath } from '../utils/paths.ts';
 import { extractWorkspaceSlug } from '../utils/workspace.ts';
 import {
@@ -664,17 +665,30 @@ export class ClaudeAgent extends BaseAgent {
         preferences: getPreferencesServer(false),
         // Session-scoped tools (SubmitPlan, source_test, etc.)
         session: getSessionScopedTools(sessionId, this.workspaceRootPath),
-        // WS Workspace documentation - always available for searching setup guides
-        // This is a public Mintlify MCP server, no auth needed
-        'ws-workspace-docs': {
-          type: 'http',
-          url: 'https://agents.craft.do/docs/mcp',
-        },
+        // NOTE: ws-workspace-docs HTTP MCP server removed — external HTTP endpoints
+        // can hang during SDK initialization (no timeout support), blocking the entire
+        // session indefinitely. The agent can use WebSearch/WebFetch for docs instead.
         // Add user-defined source servers (MCP and API, filtered by local MCP setting)
         // Note: Craft MCP server is now added via sources system
         ...sourceMcpResult.servers,
         ...this.sourceApiServers,
       };
+
+      // Log MCP server keys for diagnostics (helps identify which server causes hangs)
+      const mcpKeys = Object.keys(fullMcpServers).join(', ');
+      debug('[chat] MCP servers:', mcpKeys);
+      this.onDebug?.(`MCP servers: [${mcpKeys}]`);
+      // Log source server details for debugging hangs
+      if (Object.keys(sourceMcpResult.servers).length > 0) {
+        for (const [key, val] of Object.entries(sourceMcpResult.servers)) {
+          const serverType = (val as { type?: string })?.type ?? 'unknown';
+          const serverUrl = (val as { url?: string })?.url;
+          this.onDebug?.(`  source MCP: ${key} (type=${serverType}${serverUrl ? ', url=' + serverUrl : ''})`);
+        }
+      }
+      if (Object.keys(this.sourceApiServers).length > 0) {
+        this.onDebug?.(`  API servers: [${Object.keys(this.sourceApiServers).join(', ')}]`);
+      }
 
       // Mini agents: filter to minimal set using centralized keys
       // Regular agents: use full set including preferences, docs, and user sources
@@ -726,30 +740,21 @@ export class ClaudeAgent extends BaseAgent {
         ...getDefaultOptions(),
         model,
         // Capture stderr from SDK subprocess for error diagnostics
-        // This helps identify why sessions fail with "process exited with code 1"
         stderr: (data: string) => {
-          // Log to both debug file AND console for visibility
           debug('[SDK stderr]', data);
           console.error('[SDK stderr]', data);
-          // Keep last 20 lines to avoid unbounded memory growth
           this.lastStderrOutput.push(data);
           if (this.lastStderrOutput.length > 20) {
             this.lastStderrOutput.shift();
           }
         },
         // Extended thinking: tokens based on effective thinking level (session level + ultrathink override)
-        // Non-Claude models don't support extended thinking, so pass 0 to disable
-        // Mini agents also disable thinking for efficiency (quick config edits don't need deep reasoning)
         maxThinkingTokens: miniConfig.minimizeThinking ? 0 : (isClaude ? thinkingTokens : 0),
-        // System prompt configuration:
-        // - Mini agents: Use custom (lean) system prompt without Claude Code preset
-        // - Normal agents: Append to Claude Code's system prompt (recommended by docs)
         systemPrompt: miniConfig.enabled
           ? this.getMiniSystemPrompt()
           : {
               type: 'preset' as const,
               preset: 'claude_code' as const,
-              // Working directory included for monorepo context file discovery
               append: getSystemPrompt(
                 this.pinnedPreferencesPrompt ?? undefined,
                 this.config.debugMode,
@@ -757,27 +762,26 @@ export class ClaudeAgent extends BaseAgent {
                 this.config.session?.workingDirectory
               ),
             },
-        // Use sdkCwd for SDK session storage - this is set once at session creation and never changes.
-        // This ensures SDK can always find session transcripts regardless of workingDirectory changes.
-        // Note: workingDirectory is still used for context injection and shown to the agent.
-        cwd: this.config.session?.sdkCwd ??
-          (sessionId ? getSessionPath(this.workspaceRootPath, sessionId) : this.workspaceRootPath),
+        // FIX: Use session path as cwd instead of user's working directory.
+        // The Claude Code preset scans cwd recursively on init. If the user's working directory
+        // contains symlinks to cloud storage (Google Drive, OneDrive, etc.), the scan hangs
+        // indefinitely following the symlink into millions of cloud-backed files.
+        // Session path is always a safe local directory with no symlinks.
+        // The user's working directory is communicated via system prompt + additionalDirectories.
+        // Bash commands get the correct working directory via PreToolUse hook injection.
+        cwd: sessionId ? getSessionPath(this.workspaceRootPath, sessionId) : this.workspaceRootPath,
+        additionalDirectories: [homedir()],
         includePartialMessages: true,
-        // Tools configuration:
-        // - Mini agents: minimal set for quick config edits (reduces token count ~70%)
-        // - Regular agents: full Claude Code toolset
         tools: (() => {
           const toolsValue = miniConfig.enabled
-            ? [...miniConfig.tools]  // Use centralized tool list
+            ? [...miniConfig.tools]
             : { type: 'preset' as const, preset: 'claude_code' as const };
-          debug('[ClaudeAgent] 🔧 Tools configuration:', JSON.stringify(toolsValue));
+          debug('[ClaudeAgent] Tools configuration:', JSON.stringify(toolsValue));
           return toolsValue;
         })(),
-        // Bypass SDK's built-in permission system - we handle all permissions via PreToolUse hook
-        // This allows Safe Mode to properly allow read-only bash commands without SDK interference
+        // Bypass SDK's built-in permission system — we handle all permissions via PreToolUse hook
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        // Use PreToolUse hook to intercept tool calls (plan mode blocking happens here)
         hooks: {
           PreToolUse: [{
             hooks: [async (input) => {
@@ -875,8 +879,7 @@ export class ClaudeAgent extends BaseAgent {
                   // Built-in MCP servers that are always available (not user sources)
                   // - preferences: user preferences storage
                   // - session: session-scoped tools (SubmitPlan, source_test, etc.)
-                  // - ws-workspace-docs: always-available documentation search
-                  const builtInMcpServers = new Set(['preferences', 'session', 'ws-workspace-docs']);
+                  const builtInMcpServers = new Set(['preferences', 'session']);
 
                   // Check if this is a source server (not built-in)
                   if (!builtInMcpServers.has(serverName)) {
@@ -997,6 +1000,21 @@ export class ClaudeAgent extends BaseAgent {
               );
               if (metadataResult.modified) {
                 modifiedInput = metadataResult.input;
+              }
+
+              // BASH CWD INJECTION: Since cwd is set to session path (to avoid cloud storage
+              // symlink hang), inject cd to the user's working directory for Bash commands.
+              // This ensures Bash runs from the expected project directory, not the session dir.
+              if (input.tool_name === 'Bash') {
+                const workingDir = this.config.session?.workingDirectory;
+                if (workingDir) {
+                  const currentInput = modifiedInput || toolInput;
+                  const cmd = currentInput.command as string;
+                  if (cmd && !cmd.trim().startsWith('cd ')) {
+                    const safePath = workingDir.replace(/\\/g, '/');
+                    modifiedInput = { ...currentInput, command: `cd "${safePath}" && ${cmd}` };
+                  }
+                }
               }
 
               // If any modifications were made, return with updated input
@@ -1262,13 +1280,9 @@ export class ClaudeAgent extends BaseAgent {
         // Skip resume on retry (after session expiry) to start fresh
         ...(!_isRetry && this.sessionId ? { resume: this.sessionId } : {}),
         mcpServers,
-        // NOTE: This callback is NOT called by the SDK because we set `permissionMode: 'bypassPermissions'` above.
-        // All permission logic is handled via the PreToolUse hook instead (see hooks.PreToolUse above).
-        // Skill qualification and Bash permission logic are in PreToolUse where they actually execute.
         canUseTool: async (_toolName, input) => {
           return { behavior: 'allow' as const, updatedInput: input as Record<string, unknown> };
         },
-        // Selectively disable tools - file tools are disabled (use MCP), web/code controlled by settings
         disallowedTools,
         // Load workspace as SDK plugin (enables skills, commands, agents from workspace)
         plugins: [{ type: 'local' as const, path: this.workspaceRootPath }],
@@ -1281,10 +1295,14 @@ export class ClaudeAgent extends BaseAgent {
       if (wasResuming) {
         console.error(`[ClaudeAgent] Attempting to resume SDK session: ${this.sessionId}`);
         debug(`[ClaudeAgent] Attempting to resume SDK session: ${this.sessionId}`);
+        this.onDebug?.(`Resuming SDK session: ${this.sessionId}`);
       } else {
         console.error(`[ClaudeAgent] Starting fresh SDK session (no resume)`);
         debug(`[ClaudeAgent] Starting fresh SDK session (no resume)`);
+        this.onDebug?.('Starting fresh SDK session (no resume)');
       }
+      this.onDebug?.(`SDK cwd: ${options.cwd}`);
+      this.onDebug?.(`SDK plugins: ${JSON.stringify(options.plugins)}`);
 
       // Create AbortController for this query - allows force-stopping via forceAbort()
       this.currentQueryAbortController = new AbortController();

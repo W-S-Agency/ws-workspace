@@ -1152,7 +1152,6 @@ export class CodexAgent extends BaseAgent {
   private static readonly BUILT_IN_MCP_SERVERS = new Set([
     'preferences',
     'session',
-    'ws-workspace-docs',
     'api-bridge',
   ]);
 
