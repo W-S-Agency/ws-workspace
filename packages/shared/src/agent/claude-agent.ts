@@ -26,6 +26,7 @@ import {
   cleanupSessionScopedTools,
   type AuthRequest,
 } from './session-scoped-tools.ts';
+import { type HookSystem, type SdkHookCallbackMatcher } from '../hooks-simple/index.ts';
 import {
   getPermissionMode,
   setPermissionMode,
@@ -122,6 +123,8 @@ export interface ClaudeAgentConfig {
   };
   /** System prompt preset for mini agents ('default' | 'mini' or custom string) */
   systemPromptPreset?: 'default' | 'mini' | string;
+  /** Workspace-level HookSystem instance (shared across all agents in the workspace) */
+  hookSystem?: HookSystem;
 }
 
 // Permission request tracking
@@ -242,14 +245,9 @@ function handleUpdatePreferences(input: Record<string, unknown>): string {
     }
   }
 
-  // Handle notes (append to existing)
+  // Handle notes (replace)
   if (input.notes && typeof input.notes === 'string') {
-    const current = loadPreferences();
-    const existingNotes = current.notes || '';
-    const newNote = input.notes;
-    updates.notes = existingNotes
-      ? `${existingNotes}\n- ${newNote}`
-      : `- ${newNote}`;
+    updates.notes = input.notes;
   }
 
   // Check if anything was actually updated
@@ -278,7 +276,7 @@ const updateUserPreferencesTool = tool(
     region: z.string().optional().describe("The user's state/region/province"),
     country: z.string().optional().describe("The user's country"),
     language: z.string().optional().describe("The user's preferred language for responses"),
-    notes: z.string().optional().describe('Additional notes about the user that would be helpful to remember (preferences, context, etc.). This appends to existing notes.'),
+    notes: z.string().optional().describe('Additional notes about the user that would be helpful to remember (preferences, context, etc.). Replaces any existing notes.'),
   },
   async (args) => {
     try {
@@ -782,13 +780,27 @@ export class ClaudeAgent extends BaseAgent {
         // Bypass SDK's built-in permission system — we handle all permissions via PreToolUse hook
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        hooks: {
+        // User hooks from hooks.json are merged with internal hooks
+        hooks: (() => {
+          // Build user-defined hooks from hooks.json using the workspace-level HookSystem
+          const userHooks = this.config.hookSystem?.buildSdkHooks() ?? {};
+          if (Object.keys(userHooks).length > 0) {
+            debug('[CraftAgent] User SDK hooks loaded:', Object.keys(userHooks).join(', '));
+          }
+
+          // Internal hooks for permission handling and logging
+          const internalHooks: Record<string, SdkHookCallbackMatcher[]> = {
           PreToolUse: [{
-            hooks: [async (input) => {
+            hooks: [async (_hookInput) => {
               // Only handle PreToolUse events
-              if (input.hook_event_name !== 'PreToolUse') {
+              if (_hookInput.hook_event_name !== 'PreToolUse') {
                 return { continue: true };
               }
+              // Validate the fields we depend on are actually present
+              if (!_hookInput.tool_name || !_hookInput.tool_use_id) {
+                return { continue: true };
+              }
+              const input = _hookInput as Required<Pick<typeof _hookInput, 'tool_name' | 'tool_use_id'>> & typeof _hookInput;
 
               // Get current permission mode (single source of truth)
               const permissionMode = getPermissionMode(sessionId);
@@ -1275,7 +1287,23 @@ export class ClaudeAgent extends BaseAgent {
               return { continue: true };
             }],
           }],
-        },
+          };
+
+          // Merge internal hooks with user hooks from hooks.json
+          // Internal hooks run first (permissions), then user hooks
+          const mergedHooks: Record<string, SdkHookCallbackMatcher[]> = { ...internalHooks };
+          for (const [event, matchers] of Object.entries(userHooks) as [string, SdkHookCallbackMatcher[]][]) {
+            if (mergedHooks[event]) {
+              // Append user hooks after internal hooks
+              mergedHooks[event] = [...mergedHooks[event]!, ...matchers];
+            } else {
+              // Add new event hooks
+              mergedHooks[event] = matchers;
+            }
+          }
+
+          return mergedHooks;
+        })(),
         // Continue from previous session if we have one (enables conversation history & auto compaction)
         // Skip resume on retry (after session expiry) to start fresh
         ...(!_isRetry && this.sessionId ? { resume: this.sessionId } : {}),
