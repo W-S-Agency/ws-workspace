@@ -500,6 +500,20 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return { exists, path: workspacePath }
   })
 
+  // Get projects for a workspace (reads projects.json from workspace root)
+  ipcMain.handle(IPC_CHANNELS.GET_PROJECTS, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) return []
+    const projectsFile = join(workspace.rootPath, 'projects.json')
+    try {
+      if (!existsSync(projectsFile)) return []
+      const data = JSON.parse(readFileSync(projectsFile, 'utf-8'))
+      return Array.isArray(data.projects) ? data.projects : []
+    } catch {
+      return []
+    }
+  })
+
   // ============================================================
   // Window Management
   // ============================================================

@@ -70,6 +70,7 @@ import { SessionList } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { LeftSidebar } from "./LeftSidebar"
+import { ProjectPickerButton } from "./ProjectPickerButton"
 import { useSession } from "@/hooks/useSession"
 import { ensureSessionMessagesLoadedAtom } from "@/atoms/sessions"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
@@ -81,7 +82,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, Project } from "../../../shared/types"
 import { sessionMetaMapAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -658,6 +659,13 @@ function AppShellContent({
   // Search state for session list
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
+
+  // Projects for Project Picker
+  const [projects, setProjects] = React.useState<Project[]>([])
+  React.useEffect(() => {
+    if (!activeWorkspace) { setProjects([]); return }
+    window.electronAPI.getProjects(activeWorkspace.id).then(setProjects).catch(() => setProjects([]))
+  }, [activeWorkspace])
 
   // Ref for ChatDisplay navigation (exposed via forwardRef)
   const chatDisplayRef = React.useRef<ChatDisplayHandle>(null)
@@ -1728,6 +1736,21 @@ function AppShellContent({
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, onCreateSession, focusZone])
 
+  // Create a new chat scoped to a project directory
+  const handleNewProjectChat = useCallback(async (project: Project) => {
+    if (!activeWorkspace) return
+
+    setSearchActive(false)
+    setSearchQuery('')
+
+    const newSession = await onCreateSession(activeWorkspace.id, {
+      workingDirectory: project.path,
+      labels: project.labels,
+    })
+    navigate(routes.view.allSessions(newSession.id))
+    setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
+  }, [activeWorkspace, onCreateSession, focusZone])
+
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
     if (!activeWorkspace) return
@@ -2104,6 +2127,9 @@ function AppShellContent({
                     <TooltipContent side="right">{newChatHotkey}</TooltipContent>
                   </Tooltip>
                 </div>
+                {projects.length > 0 && (
+                  <ProjectPickerButton projects={projects} onSelectProject={handleNewProjectChat} />
+                )}
                 {/* Primary Nav: All Sessions, Flagged, States, Labels | Sources, Skills | Settings */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
                 <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">

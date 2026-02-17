@@ -397,6 +397,17 @@ export interface Session {
 }
 
 /**
+ * A project entry from workspace projects.json.
+ * Used by the Project Picker button to create sessions with a preset working directory.
+ */
+export interface Project {
+  name: string
+  path: string
+  category?: string
+  labels?: string[]
+}
+
+/**
  * Options for creating a new session
  * Note: Session creation itself has no options - auto-send is handled by NavigationContext
  */
@@ -589,6 +600,7 @@ export const IPC_CHANNELS = {
   GET_WORKSPACES: 'workspaces:get',
   CREATE_WORKSPACE: 'workspaces:create',
   CHECK_WORKSPACE_SLUG: 'workspaces:checkSlug',
+  GET_PROJECTS: 'workspaces:getProjects',
 
   // Window management
   GET_WINDOW_WORKSPACE: 'window:getWorkspace',
@@ -911,6 +923,7 @@ export interface ElectronAPI {
   getWorkspaces(): Promise<Workspace[]>
   createWorkspace(folderPath: string, name: string): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
+  getProjects(workspaceId: string): Promise<Project[]>
 
   // Window management
   getWindowWorkspace(): Promise<string | null>
