@@ -79,6 +79,7 @@ import { ensureToolIcons, ensurePresetThemes } from '@ws-workspace/shared/config
 import { setBundledAssetsRoot } from '@ws-workspace/shared/utils'
 import { setVendorRoot } from '@ws-workspace/shared/codex'
 import { setPowerShellValidatorRoot } from '@ws-workspace/shared/agent'
+import { migrateFromLegacyConfigDir } from './migrate-config'
 import { handleDeepLink } from './deep-link'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
@@ -222,6 +223,9 @@ async function createInitialWindows(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Migrate data from ~/.craft-agent/ to ~/.ws-workspace/ (one-time, idempotent)
+  migrateFromLegacyConfigDir()
+
   // Register bundled assets root so all seeding functions can find their files
   // (docs, permissions, themes, tool-icons resolve via getBundledAssetsDir)
   setBundledAssetsRoot(__dirname)
