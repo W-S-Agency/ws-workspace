@@ -663,9 +663,13 @@ function AppShellContent({
   // Projects for Project Picker
   const [projects, setProjects] = React.useState<Project[]>([])
   React.useEffect(() => {
-    if (!activeWorkspace) { setProjects([]); return }
-    window.electronAPI.getProjects(activeWorkspace.id).then(setProjects).catch(() => setProjects([]))
-  }, [activeWorkspace])
+    if (!activeWorkspaceId) { setProjects([]); return }
+    try {
+      window.electronAPI.getProjects?.(activeWorkspaceId)?.then(setProjects).catch(() => setProjects([]))
+    } catch {
+      setProjects([])
+    }
+  }, [activeWorkspaceId])
 
   // Ref for ChatDisplay navigation (exposed via forwardRef)
   const chatDisplayRef = React.useRef<ChatDisplayHandle>(null)

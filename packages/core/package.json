@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/core",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "license": "Apache-2.0",
   "description": "Core types, storage, and agent logic for WS Workspace",
   "type": "module",

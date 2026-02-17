@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/codex-types",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "description": "Generated TypeScript types for Codex app-server protocol",
   "type": "module",
   "main": "./src/index.ts",
