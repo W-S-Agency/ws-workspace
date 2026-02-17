@@ -11,6 +11,9 @@ apps/electron/release
 # Vendor binaries (downloaded during CI or local build, not committed)
 apps/electron/vendor/
 
+# Interceptor files copied during build (copy-assets.ts)
+apps/electron/packages/
+
 # code coverage
 coverage
 *.lcov

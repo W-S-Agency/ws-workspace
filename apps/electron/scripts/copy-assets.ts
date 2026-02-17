@@ -31,3 +31,21 @@ try {
   // Only warn - PowerShell validation is optional on non-Windows platforms
   console.log('⚠ powershell-parser.ps1 copy skipped (not critical on non-Windows)');
 }
+
+// Copy network interceptor files for electron-builder packaging.
+// These standalone .ts files run as Bun preload scripts (--preload flag) in the SDK subprocess.
+// electron-builder's `files` patterns resolve relative to --project (apps/electron),
+// but the source files live at the monorepo root (packages/shared/src/).
+// We copy them here so the `files` patterns in electron-builder.yml can find them.
+const interceptorFiles = [
+  'network-interceptor.ts',
+  'interceptor-common.ts',
+  'feature-flags.ts',
+];
+const interceptorSrcDir = join('..', '..', 'packages', 'shared', 'src');
+const interceptorDestDir = join('packages', 'shared', 'src');
+mkdirSync(interceptorDestDir, { recursive: true });
+for (const file of interceptorFiles) {
+  copyFileSync(join(interceptorSrcDir, file), join(interceptorDestDir, file));
+}
+console.log('✓ Copied interceptor files → packages/shared/src/');
