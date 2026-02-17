@@ -85,6 +85,8 @@ jobs:
 
       - name: Build app
         run: bun run electron:build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Package DMG (arm64)
         run: npx electron-builder --config electron-builder.yml --project apps/electron --mac --arm64 --publish never
