@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/bridge-mcp-server",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "license": "Apache-2.0",
   "description": "MCP server that bridges API sources to Codex via stdio transport",
   "type": "commonjs",
