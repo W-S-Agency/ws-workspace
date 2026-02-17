@@ -4,7 +4,7 @@
  * Provides access to built-in documentation that Claude can reference
  * when performing configuration tasks (sources, agents, permissions, etc.).
  *
- * Docs are stored at ~/.craft-agent/docs/ and synced from bundled assets.
+ * Docs are stored at ~/.ws-workspace/docs/ and synced from bundled assets.
  * Source content lives in apps/electron/resources/docs/*.md for easier editing.
  */
 
@@ -90,7 +90,7 @@ export function getDocPath(filename: string): string {
 
 // App root path reference for use in prompts
 // Using ~ for display since actual path varies per system/instance
-export const APP_ROOT = '~/.craft-agent';
+export const APP_ROOT = '~/.ws-workspace';
 
 /**
  * Documentation file references for use in error messages and tool descriptions.

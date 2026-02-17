@@ -93,7 +93,7 @@ export {
   loadSourcePermissionsConfig,
   getWorkspacePermissionsPath,
   getSourcePermissionsPath,
-  // App-level default permissions (at ~/.craft-agent/permissions/)
+  // App-level default permissions (at ~/.ws-workspace/permissions/)
   getAppPermissionsDir,
   ensureDefaultPermissions,
   loadDefaultPermissions,

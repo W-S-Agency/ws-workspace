@@ -1,7 +1,7 @@
 /**
  * Release Notes Utilities
  *
- * Loads release notes from bundled assets and syncs them to ~/.craft-agent/release-notes/.
+ * Loads release notes from bundled assets and syncs them to ~/.ws-workspace/release-notes/.
  * Follows the same pattern as docs/index.ts.
  *
  * Source content lives in apps/electron/resources/release-notes/*.md.

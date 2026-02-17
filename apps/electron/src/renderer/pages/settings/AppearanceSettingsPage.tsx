@@ -172,7 +172,7 @@ export default function AppearanceSettingsPage() {
           window.electronAPI.getHomeDir(),
         ])
         setToolIcons(mappings)
-        setToolIconsJsonPath(`${homeDir}/.craft-agent/tool-icons/tool-icons.json`)
+        setToolIconsJsonPath(`${homeDir}/.ws-workspace/tool-icons/tool-icons.json`)
       } catch (error) {
         console.error('Failed to load tool icon mappings:', error)
       }
@@ -336,7 +336,7 @@ export default function AppearanceSettingsPage() {
               {/* Tool Icons — shows the command → icon mapping used in turn cards */}
               <SettingsSection
                 title="Tool Icons"
-                description="Icons shown next to CLI commands in chat activity. Stored in ~/.craft-agent/tool-icons/."
+                description="Icons shown next to CLI commands in chat activity. Stored in ~/.ws-workspace/tool-icons/."
                 action={
                   toolIconsJsonPath ? (
                     <EditPopover
