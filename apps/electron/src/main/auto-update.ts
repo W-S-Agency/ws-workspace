@@ -121,8 +121,9 @@ function broadcastDownloadProgress(progress: number): void {
 
 // ─── Configure electron-updater ───────────────────────────────────────────────
 
-// Auto-download updates in the background after detection
-autoUpdater.autoDownload = true
+// Disable autoDownload — we trigger downloadUpdate() explicitly in the update-available handler.
+// autoDownload is unreliable: it silently fails to start the download on some systems/versions.
+autoUpdater.autoDownload = false
 
 // Install on app quit (if update is downloaded but user hasn't clicked "Restart")
 autoUpdater.autoInstallOnAppQuit = true
@@ -182,6 +183,18 @@ autoUpdater.on('update-available', (info) => {
     downloadProgress: 0,
   }
   broadcastUpdateInfo()
+
+  // Explicitly trigger download — autoDownload is unreliable on some systems
+  mainLog.info('[auto-update] Triggering explicit download...')
+  autoUpdater.downloadUpdate().catch((err) => {
+    mainLog.error('[auto-update] Download failed:', err)
+    updateInfo = {
+      ...updateInfo,
+      downloadState: 'error',
+      error: err instanceof Error ? err.message : 'Download failed',
+    }
+    broadcastUpdateInfo()
+  })
 })
 
 autoUpdater.on('update-not-available', (info) => {
@@ -323,16 +336,10 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
  *
  * @param options.autoDownload - If false, only checks without downloading (for manual "Check Now")
  */
-export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
-  const { autoDownload = true } = options
-
-  // Temporarily override autoDownload for this check if needed
-  // (e.g., manual check from settings shouldn't auto-download on metered connections)
-  const previousAutoDownload = autoUpdater.autoDownload
-  autoUpdater.autoDownload = autoDownload
-
+export async function checkForUpdates(_options: CheckOptions = {}): Promise<UpdateInfo> {
   try {
     // Check for updates - this returns a promise that resolves with the check result
+    // Download is triggered explicitly in the update-available handler (not via autoDownload)
     const result = await autoUpdater.checkForUpdates()
 
     // If update is available and was already downloaded, the update-downloaded event
@@ -363,8 +370,7 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
       error: error instanceof Error ? error.message : 'Check failed',
     }
   } finally {
-    // Restore previous autoDownload setting
-    autoUpdater.autoDownload = previousAutoDownload
+    // no cleanup needed — autoDownload is always false, download is explicit
   }
 
   return getUpdateInfo()

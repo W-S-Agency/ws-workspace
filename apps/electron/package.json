@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/electron",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Electron desktop app for WS Workspace",
   "main": "dist/main.cjs",
   "private": true,
