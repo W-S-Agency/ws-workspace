@@ -47,6 +47,7 @@ jobs:
         with:
           files: |
             apps/electron/release/WS-Workspace-x64.exe
+            apps/electron/release/WS-Workspace-x64.exe.blockmap
             apps/electron/release/latest.yml
 
   build-macos:
@@ -108,5 +109,7 @@ jobs:
         with:
           files: |
             apps/electron/release/WS-Workspace-arm64.dmg
+            apps/electron/release/WS-Workspace-arm64.dmg.blockmap
             apps/electron/release/WS-Workspace-x64.dmg
+            apps/electron/release/WS-Workspace-x64.dmg.blockmap
             apps/electron/release/latest-mac.yml
