@@ -122,6 +122,30 @@ function getBundledBunPath(): string | undefined {
     return undefined
   }
 
+  // macOS Gatekeeper strips execute permission and adds quarantine attributes to unsigned
+  // binaries inside downloaded apps. Remove quarantine and restore execute permission.
+  if (process.platform === 'darwin') {
+    try {
+      const { execSync } = require('child_process')
+      // Remove quarantine attribute (com.apple.quarantine) that blocks unsigned binaries
+      execSync(`xattr -cr "${bunPath}" 2>/dev/null`, { timeout: 5000 })
+    } catch {
+      // xattr may fail if already clean — safe to ignore
+    }
+  }
+  if (process.platform !== 'win32') {
+    try {
+      const { chmodSync, statSync } = require('fs')
+      const mode = statSync(bunPath).mode
+      if (!(mode & 0o111)) {
+        sessionLog.info(`Restoring execute permission on bundled bun: ${bunPath}`)
+        chmodSync(bunPath, mode | 0o755)
+      }
+    } catch (e) {
+      sessionLog.warn('Failed to set execute permission on bundled bun:', e)
+    }
+  }
+
   return bunPath
 }
 
