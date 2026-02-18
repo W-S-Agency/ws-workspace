@@ -39,7 +39,7 @@ import {
 import { permissionsConfigCache, getAppPermissionsDir } from '@ws-workspace/shared/agent';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '@ws-workspace/shared/workspaces';
 import type { LoadedSkill } from '@ws-workspace/shared/skills';
-import { loadSkill, loadWorkspaceSkills, skillNeedsIconDownload, downloadSkillIcon } from '@ws-workspace/shared/skills';
+import { loadSkill, loadAllSkills, skillNeedsIconDownload, downloadSkillIcon } from '@ws-workspace/shared/skills';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
@@ -323,7 +323,6 @@ export class ConfigWatcher {
     debug('[ConfigWatcher] Setting up workspace watcher for:', this.workspaceDir);
     try {
       const watcher = watch(this.workspaceDir, { recursive: true }, (eventType, filename) => {
-        debug('[ConfigWatcher] RAW FILE EVENT:', eventType, filename);
         if (!filename) return;
 
         // Normalize path separators
@@ -714,7 +713,7 @@ export class ConfigWatcher {
       }
 
       // Notify list change
-      const allSkills = loadWorkspaceSkills(this.workspaceDir);
+      const allSkills = loadAllSkills(this.workspaceDir);
       this.callbacks.onSkillsListChange?.(allSkills);
     } catch (error) {
       debug('[ConfigWatcher] Error handling skills dir change:', error);
