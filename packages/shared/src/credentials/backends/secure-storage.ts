@@ -33,7 +33,7 @@ import {
 } from 'crypto';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
-import { hostname, userInfo } from 'os';
+import { homedir, hostname, userInfo } from 'os';
 import { join, dirname } from 'path';
 
 import type { CredentialBackend } from './types.ts';

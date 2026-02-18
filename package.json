@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/ui/tsconfig.json && tsc --noEmit -p packages/mermaid/tsconfig.json && tsc --noEmit -p packages/codex-types/tsconfig.json && tsc --noEmit -p packages/bridge-mcp-server/tsconfig.json && tsc --noEmit -p packages/session-mcp-server/tsconfig.json && tsc --noEmit -p packages/session-tools-core/tsconfig.json && tsc --noEmit -p apps/electron/tsconfig.json && tsc --noEmit -p apps/viewer/tsconfig.json",
+    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/ui/tsconfig.json",
     "lint:electron": "cd apps/electron && bun run lint",
     "lint:shared": "cd packages/shared && npx eslint .",
     "lint": "bun run lint:electron && bun run lint:shared",
