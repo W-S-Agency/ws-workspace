@@ -154,6 +154,7 @@ export class TokenRefreshManager {
 
         // Restore auth state — undoes markSourceNeedsReauth() from startup
         markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
+        // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- write: restoring auth state after successful token refresh
         source.config.isAuthenticated = true;
         source.config.connectionStatus = 'connected';
         source.config.connectionError = undefined;

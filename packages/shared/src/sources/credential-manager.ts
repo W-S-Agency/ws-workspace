@@ -876,6 +876,7 @@ export function sourceNeedsAuthentication(source: LoadedSource): boolean {
     }
     // Only require auth if authType is explicitly set to 'oauth' or 'bearer'
     // Undefined or 'none' means no authentication required
+    // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- needsAuthentication has its own auth logic with authType guards
     if (mcp.authType && mcp.authType !== 'none' && !source.config.isAuthenticated) {
       return true;
     }
@@ -883,6 +884,7 @@ export function sourceNeedsAuthentication(source: LoadedSource): boolean {
 
   // API sources with auth requirements
   if (source.config.type === 'api' && api) {
+    // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- needsAuthentication has its own auth logic with authType guards
     if (api.authType !== 'none' && api.authType !== undefined && !source.config.isAuthenticated) {
       return true;
     }

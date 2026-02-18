@@ -120,6 +120,7 @@ export class SourceServerBuilder {
     if (mcp.authType !== 'none') {
       if (token) {
         (config as { headers?: Record<string, string> }).headers = { Authorization: `Bearer ${token}` };
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- server builder checks auth+token mismatch inside authType guard
       } else if (source.config.isAuthenticated) {
         // Source claims to be authenticated but token is missing - needs re-auth
         debug(`[SourceServerBuilder] Source ${source.config.slug} needs re-authentication`);
@@ -158,6 +159,7 @@ export class SourceServerBuilder {
     // Google APIs - use token getter with auto-refresh
     // Note: Direct isAuthenticated check is safe - Google OAuth always requires auth
     if (provider === 'google') {
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- Google OAuth always requires auth; also checks getToken
       if (!source.config.isAuthenticated || !getToken) {
         debug(`[SourceServerBuilder] Google API source ${source.config.slug} not authenticated`);
         return null;
@@ -172,6 +174,7 @@ export class SourceServerBuilder {
     // Slack APIs - use token getter with auto-refresh
     // Note: Direct isAuthenticated check is safe - Slack OAuth always requires auth
     if (provider === 'slack') {
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- Slack OAuth always requires auth; also checks getToken
       if (!source.config.isAuthenticated || !getToken) {
         debug(`[SourceServerBuilder] Slack API source ${source.config.slug} not authenticated`);
         return null;

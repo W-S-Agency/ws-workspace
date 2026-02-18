@@ -1083,6 +1083,7 @@ export default function App() {
   // handleOpenFile/handleOpenUrl that always opened in external apps.
   const linkInterceptor = useLinkInterceptor({
     openFileExternal: async (path) => {
+      // eslint-disable-next-line craft-links/no-direct-file-open -- this IS the link interceptor's external fallback
       try { await window.electronAPI.openFile(path) }
       catch (error) { console.error('Failed to open file:', error) }
     },
