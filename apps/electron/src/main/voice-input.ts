@@ -37,23 +37,19 @@ async function getToken(): Promise<string> {
 async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Promise<{ id: number }> {
   const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('ogg') ? 'ogg' : 'wav'
   const filename = `voice-${Date.now()}.${ext}`
-  const boundary = `----Boundary${Date.now()}`
 
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-    `Content-Type: ${mimeType}\r\n\r\n`
-  )
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`)
-  const body = Buffer.concat([head, buffer, tail])
+  // Use FormData + Blob (Web APIs) — Electron's main process fetch is net.fetch (Chromium),
+  // which handles FormData correctly but may fail with manually constructed multipart Buffer bodies
+  const blob = new Blob([buffer], { type: mimeType })
+  const formData = new FormData()
+  formData.append('file', blob, filename)
 
   const resp = await fetch(`${WHISPER_URL}/api/transcriptions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
     },
-    body,
+    body: formData,
   })
 
   if (!resp.ok) throw new Error(`Upload failed: ${resp.status} ${await resp.text()}`)

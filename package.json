@@ -1,6 +1,6 @@
 {
   "name": "ws-workspace",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "WS Workspace - Claude Code-like agent for documents",
   "type": "module",
   "private": true,

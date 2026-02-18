@@ -4001,9 +4001,20 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // ── Voice Input ──────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, async (_event, audioData: Uint8Array, mimeType: string) => {
-    const { transcribeAudio } = await import('./voice-input')
-    const buffer = Buffer.from(audioData)
-    return transcribeAudio(buffer, mimeType)
+    try {
+      ipcLog.info(`[voice-input] IPC received: type=${typeof audioData}, constructor=${audioData?.constructor?.name}, length=${audioData?.length ?? audioData?.byteLength ?? 'unknown'}, mimeType=${mimeType}`)
+      const { transcribeAudio } = await import('./voice-input')
+      ipcLog.info('[voice-input] Module imported OK')
+      const buffer = Buffer.from(audioData)
+      ipcLog.info(`[voice-input] Buffer created: ${buffer.length} bytes`)
+      const result = await transcribeAudio(buffer, mimeType)
+      ipcLog.info(`[voice-input] Transcription result: "${result.text?.substring(0, 40)}..."`)
+      return result
+    } catch (err) {
+      const msg = err instanceof Error ? err.stack || err.message : String(err)
+      ipcLog.error(`[voice-input] Transcribe failed: ${msg}`)
+      throw err
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_COPY_TO_CLIPBOARD, async (_event, text: string) => {
