@@ -85,8 +85,7 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Pro
     execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL], {
       timeout: 30_000,
     }, (err, stdout, stderr) => {
-      // Clean up temp file
-      try { unlinkSync(tmpFile) } catch {}
+      // Keep temp file for debugging (saved at tmpFile path logged above)
 
       if (err) {
         reject(new Error(`Upload child process failed: ${err.message} ${stderr}`))
