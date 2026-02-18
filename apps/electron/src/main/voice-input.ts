@@ -64,7 +64,7 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Pro
     const boundary = '----Boundary' + Date.now();
     const head = Buffer.from(
       '--' + boundary + '\\r\\n' +
-      'Content-Disposition: form-data; name="file"; filename="voice.' + (mimeType.includes('webm') ? 'webm' : 'ogg') + '"\\r\\n' +
+      'Content-Disposition: form-data; name="file"; filename="voice.' + (mimeType.includes('wav') ? 'wav' : mimeType.includes('webm') ? 'webm' : 'ogg') + '"\\r\\n' +
       'Content-Type: ' + mimeType + '\\r\\n\\r\\n'
     );
     const tail = Buffer.from('\\r\\n--' + boundary + '--\\r\\n');
@@ -85,7 +85,7 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Pro
     execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL], {
       timeout: 30_000,
     }, (err, stdout, stderr) => {
-      // Keep temp file for debugging (saved at tmpFile path logged above)
+      try { unlinkSync(tmpFile) } catch { /* ignore */ }
 
       if (err) {
         reject(new Error(`Upload child process failed: ${err.message} ${stderr}`))

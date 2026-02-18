@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/viewer",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "Web viewer for WS Workspace sessions - upload and share session transcripts",
   "private": true,
   "type": "module",
