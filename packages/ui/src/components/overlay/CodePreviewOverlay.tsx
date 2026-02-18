@@ -10,6 +10,7 @@ import { BookOpen, PenLine } from 'lucide-react'
 import { PreviewOverlay } from './PreviewOverlay'
 import { ContentFrame } from './ContentFrame'
 import { ShikiCodeViewer } from '../code-viewer/ShikiCodeViewer'
+import { DownloadButton } from './DownloadButton'
 
 export interface CodePreviewOverlayProps {
   /** Whether the overlay is visible */
@@ -61,6 +62,15 @@ export function CodePreviewOverlay({
       ? `Lines ${startLine}–${startLine + numLines - 1} of ${totalLines}`
       : undefined
 
+  // Download filename: use filePath basename or fall back to language-based name
+  const downloadFilename = filePath
+    ? filePath.split('/').pop() || 'file.txt'
+    : `response.${language || 'txt'}`
+
+  const headerActions = content ? (
+    <DownloadButton content={content} filename={downloadFilename} title="Download" />
+  ) : null
+
   return (
     <PreviewOverlay
       isOpen={isOpen}
@@ -75,6 +85,7 @@ export function CodePreviewOverlay({
       subtitle={subtitle}
       error={error ? { label: mode === 'write' ? 'Write Failed' : 'Read Failed', message: error } : undefined}
       embedded={embedded}
+      headerActions={headerActions}
       className="bg-foreground-3"
     >
       {/* Show command if present (Codex reads via shell commands) */}

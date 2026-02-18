@@ -6,6 +6,7 @@ export { ContentFrame, type ContentFrameProps } from './ContentFrame'
 
 // Helper components
 export { CopyButton, type CopyButtonProps } from './CopyButton'
+export { DownloadButton, type DownloadButtonProps } from './DownloadButton'
 export { ItemNavigator, type ItemNavigatorProps } from './ItemNavigator'
 export { OverlayErrorBanner, type OverlayErrorBannerProps } from './OverlayErrorBanner'
 
