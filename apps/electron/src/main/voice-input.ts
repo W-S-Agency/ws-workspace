@@ -6,7 +6,10 @@
  */
 
 import { clipboard, globalShortcut, BrowserWindow } from 'electron'
-import { request as httpsRequest } from 'node:https'
+import { execFile } from 'node:child_process'
+import { writeFileSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { mainLog } from './logger'
 import { IPC_CHANNELS } from '../shared/types'
 
@@ -35,51 +38,72 @@ async function getToken(): Promise<string> {
   return token
 }
 
+/**
+ * Upload audio via a child Node.js process.
+ *
+ * Electron's main process overrides global `fetch` with Chromium's net.fetch,
+ * which corrupts multipart binary uploads (returns 500). Even `require('node:https')`
+ * in the bundled CJS produces the same result — likely because esbuild or Electron
+ * patches the TLS stack.
+ *
+ * Spawning a plain Node.js child process guarantees we use undici's fetch (the real
+ * Node.js implementation) which works correctly — same as the standalone server.mjs.
+ */
 async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Promise<{ id: number }> {
   const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('ogg') ? 'ogg' : 'wav'
-  const filename = `voice-${Date.now()}.${ext}`
-  const boundary = `----Boundary${Date.now()}`
+  const tmpFile = join(tmpdir(), `voice-upload-${Date.now()}.${ext}`)
+  writeFileSync(tmpFile, buffer)
+  mainLog.info(`[voice-input] Saved ${buffer.length} bytes to ${tmpFile}`)
 
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-    `Content-Type: ${mimeType}\r\n\r\n`
-  )
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`)
-  const body = Buffer.concat([head, buffer, tail])
-
-  // Use Node.js https module directly — Electron's global fetch uses net.fetch (Chromium)
-  // which corrupts multipart binary uploads. Node.js https bypasses Chromium's network stack.
-  return new Promise((resolve, reject) => {
-    const url = new URL(`${WHISPER_URL}/api/transcriptions`)
-    const req = httpsRequest({
-      hostname: url.hostname,
-      port: url.port || 443,
-      path: url.pathname,
+  const script = `
+    const fs = require('fs');
+    const buffer = fs.readFileSync(process.argv[1]);
+    const token = process.argv[2];
+    const mimeType = process.argv[3];
+    const WHISPER_URL = process.argv[4];
+    const boundary = '----Boundary' + Date.now();
+    const head = Buffer.from(
+      '--' + boundary + '\\r\\n' +
+      'Content-Disposition: form-data; name="file"; filename="voice.' + (mimeType.includes('webm') ? 'webm' : 'ogg') + '"\\r\\n' +
+      'Content-Type: ' + mimeType + '\\r\\n\\r\\n'
+    );
+    const tail = Buffer.from('\\r\\n--' + boundary + '--\\r\\n');
+    const body = Buffer.concat([head, buffer, tail]);
+    fetch(WHISPER_URL + '/api/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': body.length,
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'multipart/form-data; boundary=' + boundary,
       },
-    }, (res) => {
-      let data = ''
-      res.on('data', (chunk: string) => data += chunk)
-      res.on('end', () => {
-        if (res.statusCode !== 200 && res.statusCode !== 201) {
-          reject(new Error(`Upload failed: ${res.statusCode} ${data}`))
+      body,
+    })
+    .then(r => r.text().then(t => { process.stdout.write(JSON.stringify({ status: r.status, body: t })); }))
+    .catch(e => { process.stderr.write(e.message); process.exit(1); });
+  `
+
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL], {
+      timeout: 30_000,
+    }, (err, stdout, stderr) => {
+      // Clean up temp file
+      try { unlinkSync(tmpFile) } catch {}
+
+      if (err) {
+        reject(new Error(`Upload child process failed: ${err.message} ${stderr}`))
+        return
+      }
+
+      try {
+        const result = JSON.parse(stdout)
+        if (result.status !== 200 && result.status !== 201) {
+          reject(new Error(`Upload failed: ${result.status} ${result.body}`))
           return
         }
-        try {
-          resolve(JSON.parse(data))
-        } catch {
-          reject(new Error(`Upload response parse error: ${data.substring(0, 200)}`))
-        }
-      })
+        resolve(JSON.parse(result.body))
+      } catch {
+        reject(new Error(`Upload parse error: ${stdout.substring(0, 300)}`))
+      }
     })
-    req.on('error', reject)
-    req.write(body)
-    req.end()
   })
 }
 
