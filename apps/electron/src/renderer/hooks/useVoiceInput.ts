@@ -8,132 +8,82 @@ interface UseVoiceInputOptions {
   copyToClipboard?: boolean
 }
 
-/** Convert any audio blob to WAV using Web Audio API (the Whisper server only accepts WAV) */
-async function convertToWav(blob: Blob): Promise<Uint8Array> {
-  const audioCtx = new AudioContext()
-  try {
-    const arrayBuffer = await blob.arrayBuffer()
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
-
-    const sampleRate = audioBuffer.sampleRate
-    const numChannels = audioBuffer.numberOfChannels
-
-    // Interleave all channels as 16-bit PCM
-    const length = audioBuffer.length
-    const pcm16 = new Int16Array(length * numChannels)
-    for (let ch = 0; ch < numChannels; ch++) {
-      const channelData = audioBuffer.getChannelData(ch)
-      for (let i = 0; i < length; i++) {
-        const s = Math.max(-1, Math.min(1, channelData[i]))
-        pcm16[i * numChannels + ch] = s < 0 ? s * 0x8000 : s * 0x7FFF
-      }
-    }
-
-    // Build WAV file
-    const blockAlign = numChannels * 2
-    const byteRate = sampleRate * blockAlign
-    const dataSize = pcm16.byteLength
-    const fileSize = 36 + dataSize
-
-    const wavHeader = new ArrayBuffer(44)
-    const view = new DataView(wavHeader)
-    view.setUint32(0, 0x52494646, false)  // "RIFF"
-    view.setUint32(4, fileSize, true)
-    view.setUint32(8, 0x57415645, false)  // "WAVE"
-    view.setUint32(12, 0x666D7420, false) // "fmt "
-    view.setUint32(16, 16, true)          // chunk size
-    view.setUint16(20, 1, true)           // PCM format
-    view.setUint16(22, numChannels, true)
-    view.setUint32(24, sampleRate, true)
-    view.setUint32(28, byteRate, true)
-    view.setUint16(32, blockAlign, true)
-    view.setUint16(34, 16, true)          // bits per sample
-    view.setUint32(36, 0x64617461, false) // "data"
-    view.setUint32(40, dataSize, true)
-
-    const wavBytes = new Uint8Array(44 + dataSize)
-    wavBytes.set(new Uint8Array(wavHeader), 0)
-    wavBytes.set(new Uint8Array(pcm16.buffer), 44)
-
-    return wavBytes
-  } finally {
-    await audioCtx.close()
+/** Build a WAV file from raw Float32 PCM samples (mono, 16-bit) */
+function buildWav(samples: Float32Array, sampleRate: number): Uint8Array {
+  const pcm16 = new Int16Array(samples.length)
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
   }
+
+  const dataSize = pcm16.byteLength
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+
+  // RIFF header
+  view.setUint32(0, 0x52494646, false)  // "RIFF"
+  view.setUint32(4, 36 + dataSize, true)
+  view.setUint32(8, 0x57415645, false)  // "WAVE"
+  // fmt chunk
+  view.setUint32(12, 0x666D7420, false) // "fmt "
+  view.setUint32(16, 16, true)          // chunk size
+  view.setUint16(20, 1, true)           // PCM format
+  view.setUint16(22, 1, true)           // mono
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 2, true) // byte rate
+  view.setUint16(32, 2, true)           // block align
+  view.setUint16(34, 16, true)          // bits per sample
+  // data chunk
+  view.setUint32(36, 0x64617461, false) // "data"
+  view.setUint32(40, dataSize, true)
+
+  const wav = new Uint8Array(buffer)
+  wav.set(new Uint8Array(pcm16.buffer), 44)
+  return wav
+}
+
+interface RecordingContext {
+  audioCtx: AudioContext
+  source: MediaStreamAudioSourceNode
+  processor: ScriptProcessorNode
+  stream: MediaStream
+  chunks: Float32Array[]
 }
 
 export function useVoiceInput(options: UseVoiceInputOptions = {}) {
   const [state, setState] = useState<VoiceInputState>('idle')
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
+  const recordingRef = useRef<RecordingContext | null>(null)
 
   const cleanup = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
+    const rec = recordingRef.current
+    if (rec) {
+      rec.processor.disconnect()
+      rec.source.disconnect()
+      rec.stream.getTracks().forEach(track => track.stop())
+      rec.audioCtx.close().catch(() => {})
+      recordingRef.current = null
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    mediaRecorderRef.current = null
-    chunksRef.current = []
   }, [])
 
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
+      const audioCtx = new AudioContext()
+      const source = audioCtx.createMediaStreamSource(stream)
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-          ? 'audio/ogg;codecs=opus'
-          : 'audio/webm'
+      // Capture raw PCM via ScriptProcessorNode (no webm encoding)
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1)
+      const chunks: Float32Array[] = []
 
-      const recorder = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = recorder
-      chunksRef.current = []
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0)
+        chunks.push(new Float32Array(input)) // copy
       }
 
-      recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType })
-        stream.getTracks().forEach(track => track.stop())
-        streamRef.current = null
+      source.connect(processor)
+      processor.connect(audioCtx.destination) // required for processor to fire
 
-        if (blob.size < 1000) {
-          setState('idle')
-          return
-        }
-
-        setState('transcribing')
-
-        try {
-          // Convert webm/ogg to WAV — Whisper server only accepts WAV
-          const wavData = await convertToWav(blob)
-          const result = await window.electronAPI.voiceInputTranscribe(wavData, 'audio/wav')
-
-          if (result.text) {
-            if (options.copyToClipboard) {
-              await window.electronAPI.voiceInputCopyToClipboard(result.text)
-              toast.success('Copied to clipboard', {
-                description: result.text.substring(0, 80) + (result.text.length > 80 ? '...' : ''),
-              })
-            }
-            options.onTranscribed?.(result.text)
-          }
-
-          setState('idle')
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Transcription failed'
-          toast.error('Voice input failed', { description: message })
-          setState('idle')
-        }
-      }
-
-      recorder.start(250)
+      recordingRef.current = { audioCtx, source, processor, stream, chunks }
       setState('recording')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Microphone access denied'
@@ -141,13 +91,54 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       cleanup()
       setState('idle')
     }
-  }, [options, cleanup])
+  }, [cleanup])
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop()
+  const stopRecording = useCallback(async () => {
+    const rec = recordingRef.current
+    if (!rec) return
+
+    const { audioCtx, chunks } = rec
+    const sampleRate = audioCtx.sampleRate
+    cleanup()
+
+    // Concatenate all PCM chunks
+    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+    if (totalLength < sampleRate * 0.5) {
+      // Less than 0.5s of audio
+      setState('idle')
+      return
     }
-  }, [])
+
+    setState('transcribing')
+
+    try {
+      const allSamples = new Float32Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        allSamples.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      const wavData = buildWav(allSamples, sampleRate)
+      const result = await window.electronAPI.voiceInputTranscribe(wavData, 'audio/wav')
+
+      if (result.text) {
+        if (options.copyToClipboard) {
+          await window.electronAPI.voiceInputCopyToClipboard(result.text)
+          toast.success('Copied to clipboard', {
+            description: result.text.substring(0, 80) + (result.text.length > 80 ? '...' : ''),
+          })
+        }
+        options.onTranscribed?.(result.text)
+      }
+
+      setState('idle')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Transcription failed'
+      toast.error('Voice input failed', { description: message })
+      setState('idle')
+    }
+  }, [options, cleanup])
 
   const toggleRecording = useCallback(() => {
     if (state === 'recording') {

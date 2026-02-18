@@ -2,6 +2,9 @@
   "permissions": {
     "additionalDirectories": [
       "d:\\projects\\ws-workspace\\packages\\*"
+    ],
+    "allow": [
+      "Bash(wmic process where \"name=''WS Workspace.exe''\" get ExecutablePath)"
     ]
   }
 }

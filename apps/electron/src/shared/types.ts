@@ -1217,7 +1217,7 @@ export interface ElectronAPI {
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
 
   // Voice Input
-  voiceInputTranscribe(audioData: Uint8Array, mimeType: string): Promise<{ text: string; duration?: number }>
+  voiceInputTranscribe(audioData: Uint8Array, mimeType: string, language?: string): Promise<{ text: string; duration?: number }>
   voiceInputCopyToClipboard(text: string): Promise<void>
   onVoiceInputHotkeyTriggered(callback: () => void): () => void
 }

@@ -4000,14 +4000,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // ── Voice Input ──────────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, async (_event, audioData: Uint8Array, mimeType: string) => {
+  ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, async (_event, audioData: Uint8Array, mimeType: string, language?: string) => {
     try {
-      ipcLog.info(`[voice-input] IPC received: type=${typeof audioData}, constructor=${audioData?.constructor?.name}, length=${audioData?.length ?? audioData?.byteLength ?? 'unknown'}, mimeType=${mimeType}`)
+      ipcLog.info(`[voice-input] IPC received: ${audioData?.length ?? 'unknown'} bytes, mimeType=${mimeType}, lang=${language || 'auto'}`)
       const { transcribeAudio } = await import('./voice-input')
-      ipcLog.info('[voice-input] Module imported OK')
       const buffer = Buffer.from(audioData)
-      ipcLog.info(`[voice-input] Buffer created: ${buffer.length} bytes`)
-      const result = await transcribeAudio(buffer, mimeType)
+      const result = await transcribeAudio(buffer, mimeType, language)
       ipcLog.info(`[voice-input] Transcription result: "${result.text?.substring(0, 40)}..."`)
       return result
     } catch (err) {

@@ -543,8 +543,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_SET_WORKSPACE_DEFAULT, workspaceId, slug),
 
   // Voice Input
-  voiceInputTranscribe: (audioData: Uint8Array, mimeType: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, audioData, mimeType),
+  voiceInputTranscribe: (audioData: Uint8Array, mimeType: string, language?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, audioData, mimeType, language),
   voiceInputCopyToClipboard: (text: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_COPY_TO_CLIPBOARD, text),
   onVoiceInputHotkeyTriggered: (callback: () => void) => {

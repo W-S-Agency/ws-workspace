@@ -49,7 +49,7 @@ async function getToken(): Promise<string> {
  * Spawning a plain Node.js child process guarantees we use undici's fetch (the real
  * Node.js implementation) which works correctly — same as the standalone server.mjs.
  */
-async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Promise<{ id: number }> {
+async function uploadAudio(buffer: Buffer, mimeType: string, token: string, language = ''): Promise<{ id: number }> {
   const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('ogg') ? 'ogg' : 'wav'
   const tmpFile = join(tmpdir(), `voice-upload-${Date.now()}.${ext}`)
   writeFileSync(tmpFile, buffer)
@@ -61,14 +61,20 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Pro
     const token = process.argv[2];
     const mimeType = process.argv[3];
     const WHISPER_URL = process.argv[4];
+    const language = process.argv[5] || '';
     const boundary = '----Boundary' + Date.now();
-    const head = Buffer.from(
+    const filePart = Buffer.from(
       '--' + boundary + '\\r\\n' +
       'Content-Disposition: form-data; name="file"; filename="voice.' + (mimeType.includes('wav') ? 'wav' : mimeType.includes('webm') ? 'webm' : 'ogg') + '"\\r\\n' +
       'Content-Type: ' + mimeType + '\\r\\n\\r\\n'
     );
+    const langPart = language ? Buffer.from(
+      '\\r\\n--' + boundary + '\\r\\n' +
+      'Content-Disposition: form-data; name="language"\\r\\n\\r\\n' +
+      language
+    ) : Buffer.alloc(0);
     const tail = Buffer.from('\\r\\n--' + boundary + '--\\r\\n');
-    const body = Buffer.concat([head, buffer, tail]);
+    const body = Buffer.concat([filePart, buffer, langPart, tail]);
     fetch(WHISPER_URL + '/api/transcriptions', {
       method: 'POST',
       headers: {
@@ -82,7 +88,7 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Pro
   `
 
   return new Promise((resolve, reject) => {
-    execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL], {
+    execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL, language], {
       timeout: 30_000,
     }, (err, stdout, stderr) => {
       try { unlinkSync(tmpFile) } catch { /* ignore */ }
@@ -143,14 +149,14 @@ async function getText(transcription: { id: number }, token: string): Promise<st
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function transcribeAudio(audioData: Buffer, mimeType: string): Promise<{ text: string; duration?: number }> {
+export async function transcribeAudio(audioData: Buffer, mimeType: string, language = ''): Promise<{ text: string; duration?: number }> {
   if (audioData.length < 1000) {
     throw new Error('Audio too short')
   }
 
-  mainLog.info(`[voice-input] Transcribing ${audioData.length} bytes (${mimeType})`)
+  mainLog.info(`[voice-input] Transcribing ${audioData.length} bytes (${mimeType}) lang=${language || 'auto'}`)
   const token = await getToken()
-  const upload = await uploadAudio(audioData, mimeType, token)
+  const upload = await uploadAudio(audioData, mimeType, token, language)
   mainLog.info(`[voice-input] Uploaded -> ID #${upload.id}`)
 
   const done = await pollDone(upload.id, token)
