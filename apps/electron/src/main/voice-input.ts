@@ -6,6 +6,7 @@
  */
 
 import { clipboard, globalShortcut, BrowserWindow } from 'electron'
+import { request as httpsRequest } from 'node:https'
 import { mainLog } from './logger'
 import { IPC_CHANNELS } from '../shared/types'
 
@@ -37,23 +38,49 @@ async function getToken(): Promise<string> {
 async function uploadAudio(buffer: Buffer, mimeType: string, token: string): Promise<{ id: number }> {
   const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('ogg') ? 'ogg' : 'wav'
   const filename = `voice-${Date.now()}.${ext}`
+  const boundary = `----Boundary${Date.now()}`
 
-  // Use FormData + Blob (Web APIs) — Electron's main process fetch is net.fetch (Chromium),
-  // which handles FormData correctly but may fail with manually constructed multipart Buffer bodies
-  const blob = new Blob([buffer], { type: mimeType })
-  const formData = new FormData()
-  formData.append('file', blob, filename)
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+    `Content-Type: ${mimeType}\r\n\r\n`
+  )
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`)
+  const body = Buffer.concat([head, buffer, tail])
 
-  const resp = await fetch(`${WHISPER_URL}/api/transcriptions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
+  // Use Node.js https module directly — Electron's global fetch uses net.fetch (Chromium)
+  // which corrupts multipart binary uploads. Node.js https bypasses Chromium's network stack.
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${WHISPER_URL}/api/transcriptions`)
+    const req = httpsRequest({
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length,
+      },
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: string) => data += chunk)
+      res.on('end', () => {
+        if (res.statusCode !== 200 && res.statusCode !== 201) {
+          reject(new Error(`Upload failed: ${res.statusCode} ${data}`))
+          return
+        }
+        try {
+          resolve(JSON.parse(data))
+        } catch {
+          reject(new Error(`Upload response parse error: ${data.substring(0, 200)}`))
+        }
+      })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
   })
-
-  if (!resp.ok) throw new Error(`Upload failed: ${resp.status} ${await resp.text()}`)
-  return await resp.json() as { id: number }
 }
 
 async function pollDone(id: number, token: string, maxMs = 90_000): Promise<{ id: number; status: string; duration?: number }> {

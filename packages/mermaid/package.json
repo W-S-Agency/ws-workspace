@@ -1,6 +1,6 @@
 {
   "name": "@ws-workspace/mermaid",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "license": "Apache-2.0",
   "description": "Mermaid flowchart to styled SVG renderer with zinc monochrome palette",
   "type": "module",
