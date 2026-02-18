@@ -300,6 +300,10 @@ app.whenReady().then(async () => {
     // Initialize notification service
     initNotificationService(windowManager)
 
+    // Initialize voice input (global hotkey registration)
+    const { registerVoiceInputHotkey } = await import('./voice-input')
+    registerVoiceInputHotkey()
+
     // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
     if (process.platform === 'win32') {
       const { getGitBashPath, clearGitBashPath } = await import('@ws-workspace/shared/config')
@@ -461,6 +465,10 @@ app.on('before-quit', async (event) => {
     // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
+
+    // Unregister voice input global shortcut
+    const { unregisterVoiceInputHotkey } = await import('./voice-input')
+    unregisterVoiceInputHotkey()
 
     // If update is in progress, let electron-updater handle the quit flow
     // Force exit breaks the NSIS installer on Windows

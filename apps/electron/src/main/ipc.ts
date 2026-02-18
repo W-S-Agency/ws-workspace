@@ -3998,4 +3998,17 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Note: Permission mode cycling settings (cyclablePermissionModes) are now workspace-level
   // and managed via WORKSPACE_SETTINGS_GET/UPDATE channels
 
+  // ── Voice Input ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, async (_event, audioData: Uint8Array, mimeType: string) => {
+    const { transcribeAudio } = await import('./voice-input')
+    const buffer = Buffer.from(audioData)
+    return transcribeAudio(buffer, mimeType)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.VOICE_INPUT_COPY_TO_CLIPBOARD, async (_event, text: string) => {
+    const { copyToClipboard } = await import('./voice-input')
+    copyToClipboard(text)
+  })
+
 }

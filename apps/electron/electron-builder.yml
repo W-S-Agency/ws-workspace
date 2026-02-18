@@ -62,6 +62,7 @@ mac:
   # The value must match --app-icon used in actool (see afterPack.js)
   extendInfo:
     CFBundleIconName: AppIcon
+    NSMicrophoneUsageDescription: "WS Workspace needs microphone access for voice input transcription."
   target:
     - target: dmg
       arch:

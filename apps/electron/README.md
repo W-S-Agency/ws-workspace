@@ -220,6 +220,7 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **Theme system** - Cascading themes (app → workspace → agent)
 - **Agent state machine** - useAgentState hook manages activation flow
 - **Application menu** - Standard macOS/Windows menus with keyboard shortcuts
+- **Voice input** - Microphone button in chat + global hotkey for Whisper speech-to-text
 - **Component playground** - Development tool for testing UI components in isolation
 - **Type-safe navigation** - Unified routing system for tabs, actions, and deep links
 
@@ -270,11 +271,13 @@ See `CLAUDE.md` for complete route reference.
 | `main/menu.ts` | Application menu (File, Edit, View, Help) |
 | `main/deep-link.ts` | Deep link URL parsing and handling |
 | `main/sources-service.ts` | Source loading and authentication service |
+| `main/voice-input.ts` | Whisper transcription service + global hotkey |
 | `preload/index.ts` | Context bridge API |
 | `renderer/App.tsx` | React root, state management |
 | `renderer/contexts/NavigationContext.tsx` | Type-safe routing and navigation handler |
 | `renderer/lib/navigate.ts` | Global navigate() function |
 | `renderer/hooks/useAgentState.ts` | Agent activation state machine (IPC-based) |
+| `renderer/hooks/useVoiceInput.ts` | Voice recording + Whisper transcription hook |
 | `renderer/hooks/useBackgroundTasks.ts` | Background task tracking |
 | `renderer/hooks/useStatuses.ts` | Workspace status configuration |
 | `renderer/hooks/useTheme.ts` | Cascading theme resolution |

@@ -541,6 +541,17 @@ const api: ElectronAPI = {
   setDefaultLlmConnection: (slug: string) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_SET_DEFAULT, slug),
   setWorkspaceDefaultLlmConnection: (workspaceId: string, slug: string | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_SET_WORKSPACE_DEFAULT, workspaceId, slug),
+
+  // Voice Input
+  voiceInputTranscribe: (audioData: Uint8Array, mimeType: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, audioData, mimeType),
+  voiceInputCopyToClipboard: (text: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_COPY_TO_CLIPBOARD, text),
+  onVoiceInputHotkeyTriggered: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on(IPC_CHANNELS.VOICE_INPUT_HOTKEY_TRIGGERED, handler)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.VOICE_INPUT_HOTKEY_TRIGGERED, handler) }
+  },
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

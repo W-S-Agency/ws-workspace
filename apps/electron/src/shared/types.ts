@@ -876,6 +876,11 @@ export const IPC_CHANNELS = {
   AGENCY_REPO_STATUS: 'agency:repoStatus',
   AGENCY_REPO_IMPORT: 'agency:repoImport',
   AGENCY_REPO_UPDATE: 'agency:repoUpdate',
+
+  // Voice Input
+  VOICE_INPUT_TRANSCRIBE: 'voiceInput:transcribe',
+  VOICE_INPUT_HOTKEY_TRIGGERED: 'voiceInput:hotkeyTriggered',
+  VOICE_INPUT_COPY_TO_CLIPBOARD: 'voiceInput:copyToClipboard',
 } as const
 
 // Re-import types for ElectronAPI
@@ -1210,6 +1215,11 @@ export interface ElectronAPI {
   testLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   setDefaultLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
+
+  // Voice Input
+  voiceInputTranscribe(audioData: Uint8Array, mimeType: string): Promise<{ text: string; duration?: number }>
+  voiceInputCopyToClipboard(text: string): Promise<void>
+  onVoiceInputHotkeyTriggered(callback: () => void): () => void
 }
 
 /**

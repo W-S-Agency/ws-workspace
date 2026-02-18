@@ -97,6 +97,7 @@ bun run electron:start
 - **Theme System**: Cascading themes at app and workspace levels
 - **Multi-File Diff**: VS Code-style window for viewing all file changes in a turn
 - **Skills**: Specialized agent instructions stored per-workspace
+- **Voice Input**: Built-in microphone button and global hotkey (`Win+Alt+V` / `Cmd+Option+V`) for speech-to-text via Whisper
 - **File Attachments**: Drag-drop images, PDFs, Office documents with auto-conversion
 - **Hooks**: Event-driven automation — run commands or create sessions on label changes, schedules, tool use, and more
 
@@ -146,6 +147,7 @@ Use **SHIFT+TAB** to cycle through modes in the chat interface.
 | `Cmd+1/2/3` | Focus sidebar/list/chat |
 | `Cmd+/` | Keyboard shortcuts dialog |
 | `SHIFT+TAB` | Cycle permission modes |
+| `Win+Alt+V` / `Cmd+Option+V` | Voice input (record / stop) |
 | `Enter` | Send message |
 | `Shift+Enter` | New line |
 

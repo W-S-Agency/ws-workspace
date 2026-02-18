@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Loader2,
   AlertCircle,
+  Mic,
 } from 'lucide-react'
 import { Icon_Home, Icon_Folder } from '@ws-workspace/ui'
 
@@ -69,6 +70,7 @@ import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelName } from '@ws-w
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { hasOpenOverlay } from '@/lib/overlay-detection'
 import { EscapeInterruptOverlay } from './EscapeInterruptOverlay'
+import { useVoiceInput } from '@/hooks/useVoiceInput'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -516,6 +518,28 @@ export function FreeFormInput({
     window.addEventListener('craft:insert-text', handleInsertText as EventListener)
     return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
   }, [syncToParent, richInputRef])
+
+  // Voice input: record audio and transcribe via Whisper
+  const voiceInput = useVoiceInput({
+    onTranscribed: (text) => {
+      // Append transcribed text to current input (don't replace)
+      const newValue = input ? `${input} ${text}` : text
+      setInput(newValue)
+      syncToParent(newValue)
+      setTimeout(() => {
+        richInputRef.current?.focus()
+        richInputRef.current?.setSelectionRange(newValue.length, newValue.length)
+      }, 0)
+    },
+    copyToClipboard: true,
+  })
+
+  // Listen for global voice input hotkey (Win+Alt+V / Cmd+Option+V)
+  React.useEffect(() => {
+    return window.electronAPI.onVoiceInputHotkeyTriggered(() => {
+      voiceInput.toggleRecording()
+    })
+  }, [voiceInput.toggleRecording])
 
   // Listen for craft:approve-plan events (used by ResponseCard's Accept Plan button)
   // This disables safe mode AND submits the message in one action
@@ -1895,6 +1919,40 @@ Model
               </Tooltip>
             )
           })()}
+
+          {/* 5.5 Voice Input Button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className={cn(
+                  "h-7 w-7 rounded-full shrink-0 transition-colors",
+                  voiceInput.isRecording && "bg-destructive/15 text-destructive hover:bg-destructive/25",
+                  voiceInput.isTranscribing && "opacity-50 cursor-wait",
+                )}
+                onClick={voiceInput.toggleRecording}
+                disabled={disabled || voiceInput.isTranscribing}
+              >
+                {voiceInput.isRecording ? (
+                  <Mic className="h-4 w-4 animate-pulse" />
+                ) : voiceInput.isTranscribing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {voiceInput.isRecording
+                ? 'Stop recording'
+                : voiceInput.isTranscribing
+                  ? 'Transcribing...'
+                  : `Voice input (${isMac ? '⌥⌘V' : 'Win+Alt+V'})`
+              }
+            </TooltipContent>
+          </Tooltip>
 
           {/* 6. Send/Stop Button - Always show stop when processing */}
           {isProcessing ? (
