@@ -3,6 +3,7 @@ import { readFile, readdir, stat, realpath, mkdir, writeFile, unlink, rm } from 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { normalize, isAbsolute, join, basename, dirname, resolve, relative, sep } from 'path'
 import { homedir, tmpdir } from 'os'
+import { CONFIG_DIR } from '@ws-workspace/shared/config/paths'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import { SessionManager } from './sessions'
@@ -179,7 +180,7 @@ async function fetchAndStoreCopilotModels(slug: string, accessToken: string): Pr
 
   const writeDebugFile = async () => {
     try {
-      const debugPath = join(homedir(), '.ws-workspace', 'copilot-debug.log')
+      const debugPath = join(CONFIG_DIR, 'copilot-debug.log')
       await writeFile(debugPath, debugLines.join('\n') + '\n', 'utf-8')
     } catch { /* ignore */ }
   }
@@ -494,7 +495,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Check if a workspace slug already exists (for validation before creation)
   ipcMain.handle(IPC_CHANNELS.CHECK_WORKSPACE_SLUG, async (_event, slug: string) => {
-    const defaultWorkspacesDir = join(homedir(), '.ws-workspace', 'workspaces')
+    const defaultWorkspacesDir = join(CONFIG_DIR, 'workspaces')
     const workspacePath = join(defaultWorkspacesDir, slug)
     const exists = existsSync(workspacePath)
     return { exists, path: workspacePath }
@@ -1191,7 +1192,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   type AgencyRepoId = keyof typeof AGENCY_REPOS
 
   function getAgencyRepoPath(repoId: AgencyRepoId): string {
-    return join(homedir(), '.ws-workspace', 'agency', AGENCY_REPOS[repoId].dirName)
+    return join(CONFIG_DIR, 'agency', AGENCY_REPOS[repoId].dirName)
   }
 
   function isValidAgencyRepoId(id: string): id is AgencyRepoId {
@@ -1760,7 +1761,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       }
 
       // Delete the config file
-      const configPath = join(homedir(), '.ws-workspace', 'config.json')
+      const configPath = join(CONFIG_DIR, 'config.json')
       await unlink(configPath).catch(() => {
         // Ignore if file doesn't exist
       })

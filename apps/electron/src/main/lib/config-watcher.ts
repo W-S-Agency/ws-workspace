@@ -17,8 +17,8 @@
 
 import { watch, existsSync, readdirSync, statSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename, relative } from 'path';
-import { homedir } from 'os';
 import type { FSWatcher } from 'fs';
+import { CONFIG_DIR } from '@ws-workspace/shared/config/paths';
 import { debug, perf } from '@ws-workspace/shared/utils';
 import { readJsonFileSync } from '@ws-workspace/shared/utils/files';
 import { loadStoredConfig, type StoredConfig } from '@ws-workspace/shared/config';
@@ -52,7 +52,6 @@ import type { ThemeOverrides, PresetTheme } from '@ws-workspace/shared/config';
 // Constants
 // ============================================================
 
-const CONFIG_DIR = join(homedir(), '.ws-workspace');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
 

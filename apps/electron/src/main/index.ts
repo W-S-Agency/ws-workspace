@@ -4,6 +4,9 @@ import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
 import { app, BrowserWindow } from 'electron'
+
+// Fix silent microphone in Electron on Windows
+app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox')
 import { createHash } from 'crypto'
 import { hostname, homedir } from 'os'
 import * as Sentry from '@sentry/electron/main'
@@ -223,7 +226,7 @@ async function createInitialWindows(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  // Migrate data from ~/.craft-agent/ to ~/.ws-workspace/ (one-time, idempotent)
+  // Sync data from ~/.craft-agent/ to ~/.ws-workspace/ (runs every launch, fast no-op if no legacy dir)
   migrateFromLegacyConfigDir()
 
   // Register bundled assets root so all seeding functions can find their files

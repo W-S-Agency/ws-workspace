@@ -284,10 +284,10 @@ If you want to use models from OpenRouter, Vercel AI Gateway, Ollama, or any oth
 
 ## Configuration
 
-Configuration is stored at `~/.craft-agent/`:
+Configuration is stored at `~/.ws-workspace/`:
 
 ```
-~/.craft-agent/
+~/.ws-workspace/
 ├── config.json              # Main config (workspaces, LLM connections)
 ├── credentials.enc          # Encrypted credentials (AES-256-GCM)
 ├── preferences.json         # User preferences
@@ -313,7 +313,7 @@ Hooks let you automate workflows by triggering actions when events happen — la
 - "Log all permission mode changes to a file"
 - "Every Friday at 5pm, summarise this week's completed tasks"
 
-Or configure manually in `~/.craft-agent/workspaces/{id}/hooks.json`:
+Or configure manually in `~/.ws-workspace/workspaces/{id}/hooks.json`:
 
 ```json
 {
@@ -393,18 +393,18 @@ To launch the packaged app with verbose logging enabled, use `-- --debug` (note 
 
 **Windows (PowerShell):**
 ```powershell
-& "$env:LOCALAPPDATA\Programs\@craft-agentelectron\Craft Agents.exe" -- --debug
+& "$env:LOCALAPPDATA\Programs\@ws-workspaceelectron\WS Workspace.exe" -- --debug
 ```
 
 **Linux:**
 ```bash
-./craft-agents -- --debug
+./ws-workspace -- --debug
 ```
 
 Logs are written to:
-- **macOS:** `~/Library/Logs/@craft-agent/electron/main.log`
-- **Windows:** `%APPDATA%\@craft-agent\electron\logs\main.log`
-- **Linux:** `~/.config/@craft-agent/electron/logs/main.log`
+- **macOS:** `~/Library/Logs/@ws-workspace/electron/main.log`
+- **Windows:** `%APPDATA%\@ws-workspace\electron\logs\main.log`
+- **Linux:** `~/.config/@ws-workspace/electron/logs/main.log`
 
 ## License
 
