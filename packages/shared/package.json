@@ -1,9 +1,8 @@
 {
   "name": "@ws-workspace/shared",
-  "version": "0.7.6",
-  "codexVersion": "craft-v0.4.1",
+  "version": "0.5.0",
   "license": "Apache-2.0",
-  "description": "Shared business logic for WS Workspace - agent, auth, config, credentials, MCP integration",
+  "description": "Shared business logic for Craft Agents - agent, auth, config, credentials, MCP integration",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -49,15 +48,13 @@
     "./validation": "./src/validation/index.ts",
     "./version": "./src/version/index.ts",
     "./branding": "./src/branding.ts",
-    "./network-interceptor": "./src/network-interceptor.ts",
+    "./interceptor": "./src/interceptor-common.ts",
     "./search": "./src/search/index.ts",
     "./tools": "./src/tools/index.ts",
-    "./codex": "./src/codex/index.ts",
     "./mentions": "./src/mentions/index.ts",
     "./skills/types": "./src/skills/types.ts"
   },
   "dependencies": {
-    "@ws-workspace/codex-types": "workspace:*",
     "@ws-workspace/core": "workspace:*",
     "@ws-workspace/session-tools-core": "workspace:*",
     "@isaacs/ttlcache": "^2.1.4",
@@ -70,7 +67,6 @@
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.19",
-    "@anthropic-ai/sdk": ">=0.70.0",
     "@modelcontextprotocol/sdk": ">=1.0.0",
     "zod": ">=3.0.0"
   },

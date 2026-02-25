@@ -4,9 +4,6 @@ import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
 import { app, BrowserWindow } from 'electron'
-
-// Fix silent microphone in Electron on Windows
-app.commandLine.appendSwitch('disable-features', 'AudioServiceSandbox')
 import { createHash } from 'crypto'
 import { hostname, homedir } from 'os'
 import * as Sentry from '@sentry/electron/main'
@@ -69,7 +66,8 @@ Sentry.setUser({ id: machineId })
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { SessionManager } from './sessions'
-import { registerIpcHandlers, startCodexModelRefresh, stopCodexModelRefresh } from './ipc'
+import { registerIpcHandlers } from './ipc'
+import { initModelRefreshService, getModelRefreshService } from './model-fetchers'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
@@ -80,16 +78,18 @@ import { initializeReleaseNotes } from '@ws-workspace/shared/release-notes'
 import { ensureDefaultPermissions } from '@ws-workspace/shared/agent/permissions-config'
 import { ensureToolIcons, ensurePresetThemes } from '@ws-workspace/shared/config'
 import { setBundledAssetsRoot } from '@ws-workspace/shared/utils'
-import { setVendorRoot } from '@ws-workspace/shared/codex'
+import { initializeBackendHostRuntime } from '@ws-workspace/shared/agent/backend'
 import { setPowerShellValidatorRoot } from '@ws-workspace/shared/agent'
-import { migrateFromLegacyConfigDir } from './migrate-config'
 import { handleDeepLink } from './deep-link'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
 import { setPerfEnabled, enableDebug } from '@ws-workspace/shared/utils'
+import { registerPiModelResolver } from '@ws-workspace/shared/config'
+import { getPiModelsForAuthProvider, getAllPiModels } from '@ws-workspace/shared/config'
 import { initNotificationService, clearBadgeCount, initBadgeIcon, initInstanceBadge } from './notifications'
 import { checkForUpdatesOnLaunch, setWindowManager as setAutoUpdateWindowManager, isUpdating } from './auto-update'
 import { validateGitBashPath } from './git-bash'
+import { migrateFromLegacyConfigDir } from './migrate-config'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -100,6 +100,12 @@ if (isDebugMode) {
   enableDebug()
   setPerfEnabled(true)
 }
+
+// Register Pi model resolver so llm-connections.ts can resolve Pi models
+// without importing @mariozechner/pi-ai (which breaks the Vite renderer build)
+registerPiModelResolver((piAuthProvider) =>
+  piAuthProvider ? getPiModelsForAuthProvider(piAuthProvider) : getAllPiModels()
+)
 
 // Custom URL scheme for deeplinks (e.g., craftagents://auth-complete)
 // Supports multi-instance dev: CRAFT_DEEPLINK_SCHEME env var (craftagents1, craftagents2, etc.)
@@ -112,8 +118,8 @@ let sessionManager: SessionManager | null = null
 let pendingDeepLink: string | null = null
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
-// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "WS Workspace [1]")
-app.setName(process.env.CRAFT_APP_NAME || 'WS Workspace')
+// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
+app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
 
 // Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
@@ -233,9 +239,14 @@ app.whenReady().then(async () => {
   // (docs, permissions, themes, tool-icons resolve via getBundledAssetsDir)
   setBundledAssetsRoot(__dirname)
 
-  // Register vendor root so the Codex binary resolver can find bundled binaries
-  // (Codex binary resolves via resolveCodexBinary() which checks vendor/codex/)
-  setVendorRoot(__dirname)
+  // Initialize backend runtime bootstrapping (Codex vendor root, Claude SDK runtime paths).
+  initializeBackendHostRuntime({
+    hostRuntime: {
+      appRootPath: app.isPackaged ? app.getAppPath() : process.cwd(),
+      resourcesPath: process.resourcesPath,
+      isPackaged: app.isPackaged,
+    },
+  })
 
   // Register PowerShell validator root so it can find the bundled parser script
   // (Windows only: validates PowerShell commands in Explore mode using AST analysis)
@@ -303,10 +314,6 @@ app.whenReady().then(async () => {
     // Initialize notification service
     initNotificationService(windowManager)
 
-    // Initialize voice input (global hotkey registration)
-    const { registerVoiceInputHotkey } = await import('./voice-input')
-    registerVoiceInputHotkey()
-
     // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
     if (process.platform === 'win32') {
       const { getGitBashPath, clearGitBashPath } = await import('@ws-workspace/shared/config')
@@ -323,6 +330,25 @@ app.whenReady().then(async () => {
       }
     }
 
+    // Initialize model refresh service BEFORE IPC handlers —
+    // getModelRefreshService() is called from IPC handlers, so it must be ready
+    // before any renderer can send messages. The credential resolver uses lazy
+    // import() so it doesn't depend on session manager being initialized first.
+    const modelRefreshService = initModelRefreshService(async (slug: string) => {
+      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
+      const manager = getCredentialManager()
+      const [apiKey, oauth] = await Promise.all([
+        manager.getLlmApiKey(slug).catch(() => null),
+        manager.getLlmOAuth(slug).catch(() => null),
+      ])
+      return {
+        apiKey: apiKey ?? undefined,
+        oauthAccessToken: oauth?.accessToken,
+        oauthRefreshToken: oauth?.refreshToken,
+        oauthIdToken: oauth?.idToken,
+      }
+    })
+
     // Register IPC handlers (must happen before window creation)
     registerIpcHandlers(sessionManager, windowManager)
 
@@ -332,8 +358,8 @@ app.whenReady().then(async () => {
     // Initialize auth (must happen after window creation for error reporting)
     await sessionManager.initialize()
 
-    // Start periodic Codex model discovery (fetches model/list from app-server every 30 min)
-    startCodexModelRefresh()
+    // Start periodic model refresh after auth is initialized
+    modelRefreshService.startAll()
 
     // Run credential health check at startup to detect issues early
     // (corruption, machine migration, missing credentials for default connection)
@@ -462,16 +488,12 @@ app.on('before-quit', async (event) => {
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
 
-    // Stop periodic Codex model refresh
-    stopCodexModelRefresh()
+    // Stop all model refresh timers
+    getModelRefreshService().stopAll()
 
     // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
-
-    // Unregister voice input global shortcut
-    const { unregisterVoiceInputHotkey } = await import('./voice-input')
-    unregisterVoiceInputHotkey()
 
     // If update is in progress, let electron-updater handle the quit flow
     // Force exit breaks the NSIS installer on Windows

@@ -12,11 +12,12 @@ const ROOT_DIR = join(import.meta.dir, "..");
 const ELECTRON_DIR = join(ROOT_DIR, "apps/electron");
 const DIST_DIR = join(ELECTRON_DIR, "dist");
 
-// MCP server paths (for Codex sessions)
+// MCP server paths
 const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
-const BRIDGE_SERVER_DIR = join(ROOT_DIR, "packages/bridge-mcp-server");
-const BRIDGE_SERVER_OUTPUT = join(BRIDGE_SERVER_DIR, "dist/index.js");
+// Pi agent server path (subprocess for Pi SDK sessions)
+const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
+const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 
 // Platform-specific binary paths (bun creates .exe on Windows, no extension on Unix)
 const IS_WINDOWS = process.platform === "win32";
@@ -25,7 +26,7 @@ const VITE_BIN = join(ROOT_DIR, `node_modules/.bin/vite${BIN_EXT}`);
 const ELECTRON_BIN = join(ROOT_DIR, `node_modules/.bin/electron${BIN_EXT}`);
 
 // Multi-instance detection (matches detect-instance.sh logic)
-// Detects instance number from folder name suffix (e.g., ws-workspace-1 → instance 1)
+// Detects instance number from folder name suffix (e.g., craft-agents-1 → instance 1)
 function detectInstance(): void {
   // Don't override if already set (e.g., by sourcing detect-instance.sh first)
   if (process.env.CRAFT_VITE_PORT) return;
@@ -37,8 +38,8 @@ function detectInstance(): void {
     const instanceNum = match[1];
     process.env.CRAFT_INSTANCE_NUMBER = instanceNum;
     process.env.CRAFT_VITE_PORT = `${instanceNum}173`;
-    process.env.CRAFT_APP_NAME = `WS Workspace [${instanceNum}]`;
-    process.env.CRAFT_CONFIG_DIR = join(process.env.HOME || "", `.ws-workspace-${instanceNum}`);
+    process.env.CRAFT_APP_NAME = `Craft Agents [${instanceNum}]`;
+    process.env.CRAFT_CONFIG_DIR = join(process.env.HOME || "", `.craft-agent-${instanceNum}`);
     process.env.CRAFT_DEEPLINK_SCHEME = `craftagents${instanceNum}`;
     console.log(`🔢 Instance ${instanceNum} detected: port=${process.env.CRAFT_VITE_PORT}, config=${process.env.CRAFT_CONFIG_DIR}`);
   }
@@ -147,74 +148,38 @@ function copyResources(): void {
   }
 }
 
-// Build MCP servers for Codex sessions (one-time, no watch needed)
-// If src/ doesn't exist but dist/ does (OSS distribution), skip build.
+// Build MCP servers for Codex sessions and Pi agent server (one-time, no watch needed)
 async function buildMcpServers(): Promise<void> {
-  console.log("🌉 Building MCP servers for Codex sessions...");
-
-  const sessionSrc = join(SESSION_SERVER_DIR, "src/index.ts");
-  const bridgeSrc = join(BRIDGE_SERVER_DIR, "src/index.ts");
-  const sessionDist = join(SESSION_SERVER_DIR, "dist/index.js");
-  const bridgeDist = join(BRIDGE_SERVER_DIR, "dist/index.js");
-
-  // Skip build if source is missing but prebuilt dist exists (OSS fork)
-  const sessionNeedsBuild = existsSync(sessionSrc);
-  const bridgeNeedsBuild = existsSync(bridgeSrc);
-
-  if (!sessionNeedsBuild && existsSync(sessionDist) && !bridgeNeedsBuild && existsSync(bridgeDist)) {
-    console.log("✅ MCP servers already prebuilt (src/ not present), skipping build");
-    return;
-  }
+  console.log("🌉 Building MCP servers and Pi agent server...");
 
   // Ensure dist directories exist
   const sessionDistDir = join(SESSION_SERVER_DIR, "dist");
-  const bridgeDistDir = join(BRIDGE_SERVER_DIR, "dist");
+  const piDistDir = join(PI_AGENT_SERVER_DIR, "dist");
   if (!existsSync(sessionDistDir)) mkdirSync(sessionDistDir, { recursive: true });
-  if (!existsSync(bridgeDistDir)) mkdirSync(bridgeDistDir, { recursive: true });
+  if (!existsSync(piDistDir)) mkdirSync(piDistDir, { recursive: true });
 
-  // Build servers that have source available
-  const builds: Promise<{ success: boolean; error?: Error }>[] = [];
+  // Build session MCP server (esbuild, packages external — deps resolve from root node_modules)
+  const sessionResult = await runEsbuild(
+    "packages/session-mcp-server/src/index.ts",
+    "packages/session-mcp-server/dist/index.js",
+    {},
+    { packagesExternal: true }
+  );
 
-  if (sessionNeedsBuild) {
-    builds.push(runEsbuild(
-      "packages/session-mcp-server/src/index.ts",
-      "packages/session-mcp-server/dist/index.js",
-      {},
-      { packagesExternal: true }
-    ));
+  if (!sessionResult.success) {
+    console.error("❌ Session MCP server build failed:", sessionResult.error);
+    process.exit(1);
   }
-  if (bridgeNeedsBuild) {
-    builds.push(runEsbuild(
-      "packages/bridge-mcp-server/src/index.ts",
-      "packages/bridge-mcp-server/dist/index.js",
-      {},
-      { packagesExternal: true }
-    ));
-  }
+  console.log("✅ Session MCP server built");
 
-  const results = await Promise.all(builds);
-  let idx = 0;
-
-  if (sessionNeedsBuild) {
-    if (!results[idx]!.success) {
-      console.error("❌ Session MCP server build failed:", results[idx]!.error);
-      process.exit(1);
-    }
-    console.log("✅ Session MCP server built");
-    idx++;
-  } else {
-    console.log("✅ Session MCP server: using prebuilt dist");
+  // Build Pi agent server with bun (not esbuild) because its Pi SDK deps are ESM-only.
+  // esbuild with packages:external leaves them as require() calls which fail at runtime.
+  const piResult = await buildPiAgentServer();
+  if (!piResult.success) {
+    console.error("❌ Pi agent server build failed:", piResult.error);
+    process.exit(1);
   }
-
-  if (bridgeNeedsBuild) {
-    if (!results[idx]!.success) {
-      console.error("❌ Bridge MCP server build failed:", results[idx]!.error);
-      process.exit(1);
-    }
-    console.log("✅ Bridge MCP server built");
-  } else {
-    console.log("✅ Bridge MCP server: using prebuilt dist");
-  }
+  console.log("✅ Pi agent server built");
 }
 
 // Get OAuth defines for esbuild API
@@ -244,29 +209,15 @@ function getElectronEnv(): Record<string, string> {
   // It checks: CODEX_PATH env var > bundled binary > local dev fork > system PATH.
   // You can override with CODEX_PATH env var if needed for debugging.
 
-  const env = {
+  return {
     ...process.env as Record<string, string>,
     VITE_DEV_SERVER_URL: `http://localhost:${vitePort}`,
     CRAFT_CONFIG_DIR: process.env.CRAFT_CONFIG_DIR || "",
-    CRAFT_APP_NAME: process.env.CRAFT_APP_NAME || "WS Workspace",
+    CRAFT_APP_NAME: process.env.CRAFT_APP_NAME || "Craft Agents",
     CRAFT_DEEPLINK_SCHEME: process.env.CRAFT_DEEPLINK_SCHEME || "craftagents",
     CRAFT_INSTANCE_NUMBER: process.env.CRAFT_INSTANCE_NUMBER || "",
   };
-  // ELECTRON_RUN_AS_NODE forces Electron to run as plain Node.js,
-  // which disables the Electron runtime (app, BrowserWindow, etc.).
-  // Bun sets this when spawning scripts. Must be removed for Electron to work.
-  delete env.ELECTRON_RUN_AS_NODE;
-  return env;
 }
-
-// Electron-specific packages that must NOT be bundled — they use require('electron')
-// internally and need Electron's runtime module resolution at load time.
-const ELECTRON_EXTERNALS = [
-  "electron",
-  "@sentry/electron", "@sentry/electron/main", "@sentry/electron/preload",
-  "electron-log", "electron-log/main",
-  "electron-updater",
-];
 
 // Run a one-shot esbuild using the JavaScript API
 async function runEsbuild(
@@ -282,11 +233,34 @@ async function runEsbuild(
       platform: "node",
       format: "cjs",
       outfile: join(ROOT_DIR, outfile),
-      external: ELECTRON_EXTERNALS,
+      external: ["electron"],
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       define: defines,
       logLevel: "warning",
     });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+// Build Pi agent server using bun instead of esbuild.
+// The Pi SDK (@mariozechner/pi-coding-agent) is ESM-only, and esbuild with
+// packages:external leaves ESM imports as require() calls that fail at runtime.
+// Bun's bundler handles ESM→ESM bundling correctly.
+async function buildPiAgentServer(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const proc = spawn({
+      cmd: ["bun", "build", "src/index.ts", "--outdir=dist", "--target=bun", "--format=esm"],
+      cwd: PI_AGENT_SERVER_DIR,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      return { success: false, error: stderr };
+    }
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err) };
@@ -458,7 +432,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
-    external: ELECTRON_EXTERNALS,
+    external: ["electron"],
     define: oauthDefines,
     logLevel: "info",
   });
@@ -473,7 +447,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/preload.cjs"),
-    external: ELECTRON_EXTERNALS,
+    external: ["electron"],
     logLevel: "info",
   });
   await preloadContext.watch();

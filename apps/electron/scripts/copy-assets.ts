@@ -38,7 +38,6 @@ try {
 // but the source files live at the monorepo root (packages/shared/src/).
 // We copy them here so the `files` patterns in electron-builder.yml can find them.
 const interceptorFiles = [
-  'network-interceptor.ts',
   'interceptor-common.ts',
   'feature-flags.ts',
 ];
