@@ -6,7 +6,7 @@ electronVersion: "39.2.7"
 
 # Hook to compile macOS 26+ Liquid Glass icon after packaging
 # Path resolved from CWD (workspace root), not from --project dir
-afterPack: apps/electron/scripts/afterPack.cjs
+afterPack: scripts/afterPack.cjs
 
 directories:
   output: release
