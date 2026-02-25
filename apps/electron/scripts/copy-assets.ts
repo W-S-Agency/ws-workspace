@@ -38,7 +38,9 @@ try {
 // but the source files live at the monorepo root (packages/shared/src/).
 // We copy them here so the `files` patterns in electron-builder.yml can find them.
 const interceptorFiles = [
+  'unified-network-interceptor.ts',
   'interceptor-common.ts',
+  'interceptor-request-utils.ts',
   'feature-flags.ts',
 ];
 const interceptorSrcDir = join('..', '..', 'packages', 'shared', 'src');
