@@ -1,10 +1,38 @@
 {
   "permissions": {
-    "additionalDirectories": [
-      "d:\\projects\\ws-workspace\\packages\\*"
-    ],
     "allow": [
-      "Bash(wmic process where \"name=''WS Workspace.exe''\" get ExecutablePath)"
+      "Bash(wmic process where \"name=''WS Workspace.exe''\" get ExecutablePath)",
+      "Read(//c/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/**)",
+      "Read(//c/Users/alexa/.ws-workspace/logs//**)",
+      "Read(//c/Users/alexa/AppData/Roaming/WS Workspace/logs//**)",
+      "Read(//c/Users/alexa/AppData/Roaming/WS Workspace/**)",
+      "Read(//c/Users/alexa/.ws-workspace/**)",
+      "Bash(# Try running with electron directly to see console output # First, check if we have electron locally ls /d/projects/ws-workspace/node_modules/electron/dist/)",
+      "Read(//d/projects/ws-workspace/**)",
+      "Bash(# Use cmd.exe to run the app and capture stderr cmd.exe /C \"\"\\\\\"\"C:\\\\\\\\Users\\\\\\\\alexa\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Programs\\\\\\\\@ws-workspaceelectron\\\\\\\\WS Workspace.exe\\\\\"\" 2>&1\"\" & BGPID=$! sleep 8 tasklist)",
+      "Bash(npx electron:*)",
+      "Bash(# Check if sentry existed before upstream merge cd /d/projects/ws-workspace && git show 1189956:apps/electron/package.json)",
+      "Bash(bun:*)",
+      "Bash(npx electron-builder:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"d:/projects/ws-workspace/launch-test.ps1\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"d:/projects/ws-workspace/launch-test2.ps1\")",
+      "Read(//c/Users/alexa/AppData/Local/Temp/**)",
+      "Bash(cmd.exe //C \"d:\\\\projects\\\\ws-workspace\\\\launch-clean.cmd\")",
+      "Read(//c/Users/alexa/AppData/Roaming/**)",
+      "Bash(cmd.exe //C \"start d:\\\\projects\\\\ws-workspace\\\\launch-remote-debug.cmd\")",
+      "Bash(cmd.exe //C \"start d:\\\\projects\\\\ws-workspace\\\\launch-clean.cmd\")",
+      "Bash(cmd.exe //C \"start d:\\\\projects\\\\ws-workspace\\\\launch-debug2.cmd\")",
+      "Bash(gh pr view 23344 --repo oven-sh/bun --json title,body,state,mergedAt --jq '{title, state, mergedAt, bodySnippet: \\(.body[:2000]\\)}')",
+      "Bash(ELECTRON_RUN_AS_NODE=1 \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/WS Workspace.exe\" -e \"console.log\\(JSON.stringify\\({node: process.versions.node, v8: process.versions.v8, electron: process.versions.electron}\\)\\)\")",
+      "Bash(ELECTRON_RUN_AS_NODE=1 \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/WS Workspace.exe\" --experimental-strip-types -e \"console.log\\(''TS strip works''\\)\")",
+      "Bash(ELECTRON_RUN_AS_NODE=1 \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/WS Workspace.exe\" --experimental-strip-types --require \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/resources/app/packages/shared/src/unified-network-interceptor.ts\" -e \"console.log\\(''interceptor loaded''\\)\")",
+      "Read(//c/Program Files/Git/bin/**)",
+      "Bash(ELECTRON_RUN_AS_NODE=1 \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/WS Workspace.exe\" -e \":*)",
+      "Bash(ELECTRON_RUN_AS_NODE=1 \"C:/Users/alexa/AppData/Local/Programs/@ws-workspaceelectron/WS Workspace.exe\" -e 'const p = String.raw`C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe`; const fs = require\\(\"\"fs\"\"\\); console.log\\(\"\"path:\"\", p\\); console.log\\(\"\"exists:\"\", fs.existsSync\\(p\\)\\);')"
+    ],
+    "additionalDirectories": [
+      "d:\\projects\\ws-workspace\\packages\\*",
+      "C:\\Users\\alexa\\AppData\\Local\\Programs\\@ws-workspaceelectron\\resources\\app\\dist"
     ]
   }
 }
