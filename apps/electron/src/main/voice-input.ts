@@ -91,7 +91,8 @@ async function uploadAudio(buffer: Buffer, mimeType: string, token: string, lang
     execFile(process.execPath.includes('electron') ? 'node' : process.execPath, ['-e', script, tmpFile, token, mimeType, WHISPER_URL, language], {
       timeout: 30_000,
     }, (err, stdout, stderr) => {
-      try { unlinkSync(tmpFile) } catch { /* ignore */ }
+      // Keep temp file for debugging
+      // try { unlinkSync(tmpFile) } catch { /* ignore */ }
 
       if (err) {
         reject(new Error(`Upload child process failed: ${err.message} ${stderr}`))
@@ -152,6 +153,21 @@ async function getText(transcription: { id: number }, token: string): Promise<st
 export async function transcribeAudio(audioData: Buffer, mimeType: string, language = ''): Promise<{ text: string; duration?: number }> {
   if (audioData.length < 1000) {
     throw new Error('Audio too short')
+  }
+
+  // Check if audio is silence (max amplitude < 100 out of 32768)
+  let maxAmp = 0
+  for (let i = 44; i < Math.min(audioData.length, 10044); i += 2) {
+    const sample = Math.abs(audioData.readInt16LE(i))
+    if (sample > maxAmp) maxAmp = sample
+  }
+  mainLog.info(`[voice-input] Audio check: maxAmp=${maxAmp}/32767 in first 5000 samples`)
+  if (maxAmp < 10) {
+    // Check Windows microphone permission
+    const { systemPreferences } = await import('electron')
+    const micStatus = systemPreferences.getMediaAccessStatus('microphone')
+    mainLog.warn(`[voice-input] Audio is SILENT! Windows mic access: ${micStatus}`)
+    throw new Error(`Microphone not capturing audio (silence detected). Windows mic permission: ${micStatus}. Check Windows Settings > Privacy > Microphone.`)
   }
 
   mainLog.info(`[voice-input] Transcribing ${audioData.length} bytes (${mimeType}) lang=${language || 'auto'}`)

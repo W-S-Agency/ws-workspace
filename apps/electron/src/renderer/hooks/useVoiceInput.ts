@@ -67,8 +67,17 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      })
       const audioCtx = new AudioContext()
+      // Ensure AudioContext is running (Chromium starts it suspended)
+      await audioCtx.resume()
+
       const source = audioCtx.createMediaStreamSource(stream)
 
       // Capture raw PCM via ScriptProcessorNode (no webm encoding)
@@ -82,6 +91,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
       source.connect(processor)
       processor.connect(audioCtx.destination) // required for processor to fire
+
+      // Verify mic is actually capturing audio
+      const track = stream.getAudioTracks()[0]
+      if (track && !track.enabled) track.enabled = true
 
       recordingRef.current = { audioCtx, source, processor, stream, chunks }
       setState('recording')

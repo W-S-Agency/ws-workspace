@@ -1,4 +1,4 @@
-import { BrowserWindow, shell, nativeTheme, Menu, app } from 'electron'
+import { BrowserWindow, shell, nativeTheme, Menu, app, session } from 'electron'
 import { windowLog } from './logger'
 import { join } from 'path'
 import { existsSync } from 'fs'
@@ -132,6 +132,14 @@ export class WindowManager {
         sandbox: false,
         webviewTag: true // Enable webview for browser panel
       }
+    })
+
+    // Grant microphone permission for voice input
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(permission === 'media' || permission === 'audioCapture')
+    })
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      return permission === 'media' || permission === 'audioCapture'
     })
 
     // Show window when first paint is ready (faster perceived startup)
