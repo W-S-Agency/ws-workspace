@@ -29,6 +29,8 @@ files:
   - packages/shared/src/interceptor-common.ts
   - packages/shared/src/interceptor-request-utils.ts
   - packages/shared/src/feature-flags.ts
+  # CJS compat preload: polyfills global.require for Node.js ESM context (Windows)
+  - packages/shared/src/cjs-compat-preload.cjs
   # Include bundled Bun runtime (platform-specific, set by build script)
   - vendor/bun/**/*
   # Include bundled Codex binary (platform-specific, downloaded by build script)

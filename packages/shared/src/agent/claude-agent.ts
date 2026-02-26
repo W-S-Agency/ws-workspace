@@ -1331,6 +1331,29 @@ export class ClaudeAgent extends BaseAgent {
           return;
         }
 
+        // Check for subprocess pipe/connection errors (ENOTCONN, EPIPE, etc.)
+        // These occur when the SDK subprocess crashes mid-execution or its stdio pipes break.
+        // On Windows, Bun/libuv can produce ENOTCONN when spawning child processes fails
+        // due to pipe state corruption (see oven-sh/bun#23344, #23520).
+        // Recovery: clear session and retry with a fresh subprocess.
+        const isSubprocessPipeError =
+          errorMsg.includes('enotconn') ||
+          errorMsg.includes('epipe') ||
+          errorMsg.includes('failed to write to process stdin') ||
+          errorMsg.includes('cannot write to terminated process') ||
+          errorMsg.includes('processtransport is not ready');
+
+        if (isSubprocessPipeError && !_isRetry) {
+          debug('[ClaudeAgent] Subprocess pipe broken (ENOTCONN/EPIPE), clearing session and retrying...');
+          this.sessionId = null;
+          this.pinnedPreferencesPrompt = null;
+          this.preferencesDriftNotified = false;
+          this.config.onSdkSessionIdCleared?.();
+          yield { type: 'info', message: 'Connection lost, reconnecting...' };
+          yield* this.chat(userMessage, attachments, { isRetry: true });
+          return;
+        }
+
         // Check for SDK process errors - these often wrap underlying billing/auth issues
         // The SDK's internal Claude Code process exits with code 1 for various API errors
         const isProcessError = errorMsg.includes('process exited with code');

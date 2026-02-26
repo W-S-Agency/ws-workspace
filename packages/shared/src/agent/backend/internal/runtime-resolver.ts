@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { BackendHostRuntimeContext } from '../types.ts';
 import {
@@ -165,6 +165,31 @@ export function resolveBackendHostTooling(hostRuntime: BackendHostRuntimeContext
 }
 
 /**
+ * On Windows with Node.js, remove "type": "module" from the SDK package.json
+ * so that cli.js is loaded as CommonJS.
+ *
+ * The SDK's cli.js uses require() throughout (e.g., require("fs").existsSync()).
+ * Bun allows require() in ESM files; Node.js does not — require is undefined in
+ * ESM context, causing all existsSync checks to silently return false.
+ * Removing "type" makes .js files default to CommonJS where require() works.
+ *
+ * This is idempotent — safe to call multiple times.
+ */
+function patchSdkPackageJsonForCjs(cliPath: string): void {
+  const pkgPath = join(dirname(cliPath), 'package.json');
+  try {
+    const raw = readFileSync(pkgPath, 'utf-8');
+    const pkg = JSON.parse(raw);
+    if (pkg.type === 'module') {
+      delete pkg.type;
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
+    }
+  } catch {
+    // Non-fatal: if we can't patch, the subprocess will fail with a clear error
+  }
+}
+
+/**
  * Configure anthropic-sdk globals from host runtime context.
  * This mirrors previous Electron bootstrap behavior but keeps it behind backend internals.
  */
@@ -175,12 +200,27 @@ export function applyAnthropicRuntimeBootstrap(
   if (!paths.claudeCliPath) {
     throw new Error('Claude Code SDK not found. The app package may be corrupted.');
   }
+
+  // On Windows, patch SDK package.json before any subprocess reads it.
+  // Must happen before setPathToClaudeCodeExecutable since the subprocess
+  // is spawned shortly after and needs to see the patched file.
+  if (process.platform === 'win32') {
+    patchSdkPackageJsonForCjs(paths.claudeCliPath);
+  }
+
   setPathToClaudeCodeExecutable(paths.claudeCliPath);
 
-  if (!paths.claudeInterceptorPath) {
+  // On Windows, use the pre-compiled CJS interceptor bundle instead of raw .ts.
+  // Node.js --require loads in CJS context; the .ts file uses import syntax
+  // which fails in CJS. The bundle (dist/interceptor.cjs) is already compiled.
+  const interceptorPath = process.platform === 'win32' && paths.interceptorBundlePath
+    ? paths.interceptorBundlePath
+    : paths.claudeInterceptorPath;
+
+  if (!interceptorPath) {
     throw new Error('Network interceptor not found. The app package may be corrupted.');
   }
-  setInterceptorPath(paths.claudeInterceptorPath);
+  setInterceptorPath(interceptorPath);
 
   if (hostRuntime.isPackaged) {
     if (!paths.bundledRuntimePath) {
