@@ -5,9 +5,9 @@
  */
 
 import { app } from 'electron'
-import type { ModelFetcher, ModelFetchResult, ModelFetcherCredentials } from '@craft-agent/shared/config'
-import type { LlmConnection } from '@craft-agent/shared/config'
-import { fetchBackendModels } from '@craft-agent/shared/agent/backend'
+import type { ModelFetcher, ModelFetchResult, ModelFetcherCredentials } from '@ws-workspace/shared/config'
+import type { LlmConnection } from '@ws-workspace/shared/config'
+import { fetchBackendModels } from '@ws-workspace/shared/agent/backend'
 
 export class PiModelFetcher implements ModelFetcher {
   /** No periodic refresh — SDK models are static, updated on app upgrade */

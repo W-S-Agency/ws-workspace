@@ -15,7 +15,7 @@ import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
 import type { BrowserEmptyStateLaunchPayload, BrowserEmptyStateLaunchResult, BrowserInstanceInfo } from '../shared/types'
-import { DEFAULT_THEME, loadAppTheme } from '@craft-agent/shared/config'
+import { DEFAULT_THEME, loadAppTheme } from '@ws-workspace/shared/config'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 
 export type { BrowserInstanceInfo }

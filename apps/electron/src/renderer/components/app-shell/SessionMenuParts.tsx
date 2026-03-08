@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import type { MenuComponents } from '@/components/ui/menu-context'
 import type { SessionStatusId } from '@/config/session-status-config'
 import type { SessionStatus } from '@/config/session-status-config'
-import type { LabelConfig } from '@craft-agent/shared/labels'
+import type { LabelConfig } from '@ws-workspace/shared/labels'
 import { LabelIcon } from '@/components/ui/label-icon'
 
 export interface ShareMenuItemsProps {

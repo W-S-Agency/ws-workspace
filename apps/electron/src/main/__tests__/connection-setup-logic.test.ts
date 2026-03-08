@@ -5,7 +5,7 @@ import {
   validateModelList,
   BUILT_IN_CONNECTION_TEMPLATES,
 } from '../connection-setup-logic'
-import type { ModelDefinition } from '@craft-agent/shared/config/models'
+import type { ModelDefinition } from '@ws-workspace/shared/config/models'
 
 // ============================================================
 // validateModelList

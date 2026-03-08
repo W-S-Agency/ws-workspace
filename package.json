@@ -1,7 +1,7 @@
 {
-  "name": "craft-agent",
+  "name": "ws-workspace",
   "version": "0.6.0",
-  "description": "Claude Code-like agent for Craft documents",
+  "description": "AI-powered workspace connecting multiple data sources",
   "type": "module",
   "private": true,
   "workspaces": [

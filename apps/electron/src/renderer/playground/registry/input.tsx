@@ -3,7 +3,7 @@ import { useSetAtom } from 'jotai'
 import type { ComponentEntry } from './types'
 import { cn } from '@/lib/utils'
 import { MODELS } from '@config/models'
-import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import type { PermissionMode } from '@ws-workspace/shared/agent/modes'
 import { setBrowserInstancesAtom } from '@/atoms/browser-pane'
 import type { BrowserInstanceInfo } from '../../../shared/types'
 

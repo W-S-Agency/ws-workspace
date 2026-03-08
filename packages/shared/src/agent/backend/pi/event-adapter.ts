@@ -9,7 +9,7 @@
  * Claude / Codex / Copilot backends.
  */
 
-import type { AgentEvent as CraftAgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent as CraftAgentEvent } from '@ws-workspace/core/types';
 import type {
   AgentEvent as PiAgentEvent,
 } from '@mariozechner/pi-agent-core';

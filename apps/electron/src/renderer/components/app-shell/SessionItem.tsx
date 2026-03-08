@@ -4,7 +4,7 @@ import { Flag, ShieldAlert } from "lucide-react"
 import { useActionLabel } from "@/actions"
 import { cn } from "@/lib/utils"
 import { rendererPerf } from "@/lib/perf"
-import { Spinner } from "@craft-agent/ui"
+import { Spinner } from "@ws-workspace/ui"
 import { EntityRow } from "@/components/ui/entity-row"
 import { SessionMenu } from "./SessionMenu"
 import { BatchSessionMenu } from "./BatchSessionMenu"
@@ -14,7 +14,7 @@ import { getSessionTitle, highlightMatch, hasUnreadMeta, shortTimeLocale } from 
 import { useSessionListContext } from "@/context/SessionListContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
-import { extractLabelId } from "@craft-agent/shared/labels"
+import { extractLabelId } from "@ws-workspace/shared/labels"
 
 export interface SessionItemProps {
   item: SessionMeta

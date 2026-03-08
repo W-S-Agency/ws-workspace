@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { StoredSession } from '@craft-agent/core'
+import type { StoredSession } from '@ws-workspace/core'
 import {
   SessionViewer,
   GenericOverlay,
@@ -26,7 +26,7 @@ import {
   type ActivityItem,
   type OverlayData,
   type FileChange,
-} from '@craft-agent/ui'
+} from '@ws-workspace/ui'
 import { SessionUpload } from './components/SessionUpload'
 import { Header } from './components/Header'
 
