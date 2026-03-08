@@ -23,7 +23,6 @@ export async function openUrl(url: string): Promise<void> {
     // Not in Electron main process — fall back to 'open' package.
   }
 
-  // eslint-disable-next-line craft-shared/no-direct-open-import -- this IS the open-url wrapper
   const open = await import('open');
   const openFn = open.default || open;
   await openFn(url);

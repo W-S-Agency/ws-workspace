@@ -14,7 +14,6 @@
 import { ListTodo } from 'lucide-react'
 import { Markdown } from '../markdown'
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'
-import { DownloadButton } from './DownloadButton'
 import type { OverlayTypeBadge } from './FullscreenOverlayBaseHeader'
 
 export interface DocumentFormattedMarkdownOverlayProps {
@@ -49,10 +48,6 @@ export function DocumentFormattedMarkdownOverlay({
   typeBadge,
   error,
 }: DocumentFormattedMarkdownOverlayProps) {
-  const downloadFilename = filePath
-    ? filePath.split('/').pop() || 'response.md'
-    : 'response.md'
-
   return (
     <FullscreenOverlayBase
       isOpen={isOpen}
@@ -60,7 +55,6 @@ export function DocumentFormattedMarkdownOverlay({
       filePath={filePath}
       typeBadge={typeBadge}
       copyContent={content}
-      headerActions={<DownloadButton content={content} filename={downloadFilename} title="Download" />}
       error={error ? { label: 'Write Failed', message: error } : undefined}
     >
       {/* Content wrapper — min-h-full for vertical centering within FullscreenOverlayBase's scroll container.

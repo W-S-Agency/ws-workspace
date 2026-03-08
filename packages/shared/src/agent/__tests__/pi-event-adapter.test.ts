@@ -29,6 +29,7 @@ describe('PiEventAdapter', () => {
   });
 
   afterEach(() => {
+    toolMetadataStore._clearForTesting();
     rmSync(sessionDir, { recursive: true, force: true });
   });
 
@@ -444,21 +445,81 @@ describe('PiEventAdapter', () => {
   // ============================================================
 
   describe('error surfacing', () => {
-    it('should emit error event for stopReason error with errorMessage', () => {
+    it('should emit plain error for unclassified error messages', () => {
       const events = collect(adapter.adaptEvent({
         type: 'message_end',
         message: {
           role: 'assistant',
           stopReason: 'error',
-          errorMessage: 'API rate limit exceeded',
+          errorMessage: 'Something went wrong internally',
         },
       } as any));
 
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
         type: 'error',
-        message: 'API rate limit exceeded',
+        message: 'Something went wrong internally',
       });
+    });
+
+    it('should emit typed_error for auth-expiry error messages', () => {
+      const events = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: 'Provided authentication token is expired. Please try signing in again.',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('typed_error');
+      expect(events[0].error.code).toBe('expired_oauth_token');
+    });
+
+    it('should emit typed_error for 401 unauthorized errors', () => {
+      const events = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: '401 Unauthorized',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('typed_error');
+      expect(events[0].error.code).toBe('invalid_api_key');
+    });
+
+    it('should emit typed_error for billing/402 errors', () => {
+      const events = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: '402 Payment required',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('typed_error');
+      expect(events[0].error.code).toBe('billing_error');
+    });
+
+    it('should emit typed_error for rate limit errors', () => {
+      const events = collect(adapter.adaptEvent({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          stopReason: 'error',
+          errorMessage: '429 Too many requests - rate limit exceeded',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('typed_error');
+      expect(events[0].error.code).toBe('rate_limited');
     });
 
     it('should not emit error without errorMessage even if stopReason is error', () => {
@@ -500,6 +561,141 @@ describe('PiEventAdapter', () => {
         toolUseId: 'call_123',
         input: { command: 'ls -la', description: 'List files' },
         displayName: 'Run Command',
+      });
+    });
+
+    it('should fallback to args metadata when store has no entry', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_no_store',
+        toolName: 'bash',
+        args: {
+          command: 'npm test',
+          _intent: 'Run unit tests',
+          _displayName: 'Run Tests',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: 'tool_start',
+        toolName: 'Bash',
+        toolUseId: 'call_no_store',
+        intent: 'Run unit tests',
+        displayName: 'Run Tests',
+      });
+    });
+
+    it('should prefer store metadata over args metadata when both exist', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+
+      toolMetadataStore.set('call_store_wins', {
+        intent: 'Stored intent',
+        displayName: 'Stored name',
+        timestamp: Date.now(),
+      });
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_store_wins',
+        toolName: 'bash',
+        args: {
+          command: 'npm test',
+          _intent: 'Args intent',
+          _displayName: 'Args name',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: 'tool_start',
+        toolUseId: 'call_store_wins',
+        intent: 'Stored intent',
+        displayName: 'Stored name',
+      });
+    });
+
+    it('should use canonical metadata from event payload', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_canonical',
+        toolName: 'bash',
+        args: { command: 'npm test' },
+        toolMetadata: {
+          intent: 'Canonical intent',
+          displayName: 'Canonical name',
+          source: 'interceptor',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: 'tool_start',
+        toolUseId: 'call_canonical',
+        intent: 'Canonical intent',
+        displayName: 'Canonical name',
+      });
+    });
+
+    it('should fallback to base id metadata when toolCallId includes a pipe suffix', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+
+      toolMetadataStore.set('call_base_id', {
+        intent: 'Stored base intent',
+        displayName: 'Stored base name',
+        timestamp: Date.now(),
+      });
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_base_id|fc_123',
+        toolName: 'bash',
+        args: { command: 'npm test' },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: 'tool_start',
+        toolUseId: 'call_base_id|fc_123',
+        intent: 'Stored base intent',
+        displayName: 'Stored base name',
+      });
+    });
+
+    it('should prefer canonical metadata over store and args', () => {
+      collect(adapter.adaptEvent({ type: 'turn_start' } as any));
+
+      toolMetadataStore.set('call_canonical_wins', {
+        intent: 'Stored intent',
+        displayName: 'Stored name',
+        timestamp: Date.now(),
+      });
+
+      const events = collect(adapter.adaptEvent({
+        type: 'tool_execution_start',
+        toolCallId: 'call_canonical_wins',
+        toolName: 'bash',
+        args: {
+          command: 'npm test',
+          _intent: 'Args intent',
+          _displayName: 'Args name',
+        },
+        toolMetadata: {
+          intent: 'Canonical intent',
+          displayName: 'Canonical name',
+          source: 'interceptor',
+        },
+      } as any));
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: 'tool_start',
+        toolUseId: 'call_canonical_wins',
+        intent: 'Canonical intent',
+        displayName: 'Canonical name',
       });
     });
 

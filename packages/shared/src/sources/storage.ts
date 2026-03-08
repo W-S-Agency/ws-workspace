@@ -296,7 +296,7 @@ export { isIconUrl } from '../utils/icon.ts';
 
 /**
  * Load complete source with all files
- * @param workspaceRootPath - Absolute path to workspace folder (e.g., ~/.ws-workspace/workspaces/xxx)
+ * @param workspaceRootPath - Absolute path to workspace folder (e.g., ~/.craft-agent/workspaces/xxx)
  * @param sourceSlug - Source folder name
  */
 export function loadSource(workspaceRootPath: string, sourceSlug: string): LoadedSource | null {
@@ -370,7 +370,6 @@ export function isSourceUsable(source: LoadedSource): boolean {
   if (authType === 'none' || authType === undefined) return true;
 
   // Sources requiring auth must be authenticated
-  // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- this IS the isSourceUsable definition
   return source.config.isAuthenticated === true;
 }
 

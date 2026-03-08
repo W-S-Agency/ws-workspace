@@ -23,8 +23,8 @@
     "noPropertyAccessFromIndexSignature": false,
     "baseUrl": ".",
     "paths": {
-      "@ws-workspace/core": ["./src/index.ts"],
-      "@ws-workspace/core/*": ["./src/*"]
+      "@craft-agent/core": ["./src/index.ts"],
+      "@craft-agent/core/*": ["./src/*"]
     },
     "rootDir": "src",
     "outDir": "dist",

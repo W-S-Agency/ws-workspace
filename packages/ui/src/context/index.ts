@@ -1,5 +1,5 @@
 /**
- * Context exports for @ws-workspace/ui
+ * Context exports for @craft-agent/ui
  */
 
 export {

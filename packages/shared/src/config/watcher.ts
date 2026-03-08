@@ -5,11 +5,11 @@
  * Uses recursive directory watching for simplicity and reliability.
  *
  * Watched paths:
- * - ~/.ws-workspace/config.json - Main app configuration
- * - ~/.ws-workspace/preferences.json - User preferences
- * - ~/.ws-workspace/theme.json - App-level theme overrides
- * - ~/.ws-workspace/themes/*.json - Preset theme files (app-level)
- * - ~/.ws-workspace/workspaces/{slug}/ - Workspace directory (recursive)
+ * - ~/.craft-agent/config.json - Main app configuration
+ * - ~/.craft-agent/preferences.json - User preferences
+ * - ~/.craft-agent/theme.json - App-level theme overrides
+ * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
+ * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - sources/{slug}/config.json, guide.md, permissions.json
  *   - skills/{slug}/SKILL.md, icon.*
  *   - sessions/{id}/session.jsonl (header metadata only)
@@ -49,6 +49,7 @@ import {
 } from '../statuses/storage.ts';
 import { readSessionHeader } from '../sessions/jsonl.ts';
 import type { SessionHeader } from '../sessions/types.ts';
+import { AUTOMATIONS_CONFIG_FILE } from '../automations/constants.ts';
 import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from './storage.ts';
 import type { ThemeOverrides, PresetTheme } from './theme.ts';
 
@@ -108,7 +109,7 @@ export interface ConfigWatcherCallbacks {
   onSkillsListChange?: (skills: LoadedSkill[]) => void;
 
   // Permissions callbacks
-  /** Called when app-level default permissions change (~/.ws-workspace/permissions/default.json) */
+  /** Called when app-level default permissions change (~/.craft-agent/permissions/default.json) */
   onDefaultPermissionsChange?: () => void;
   /** Called when workspace permissions.json changes */
   onWorkspacePermissionsChange?: (workspaceId: string) => void;
@@ -125,9 +126,9 @@ export interface ConfigWatcherCallbacks {
   /** Called when labels config.json changes */
   onLabelConfigChange?: (workspaceId: string) => void;
 
-  // Hooks callbacks
-  /** Called when hooks.json changes */
-  onHooksConfigChange?: (workspaceId: string) => void;
+  // Automations callbacks
+  /** Called when automations.json changes */
+  onAutomationsConfigChange?: (workspaceId: string) => void;
 
   // Session callbacks
   /** Called when a session's JSONL header is modified externally (labels, name, flags, etc.) */
@@ -376,10 +377,10 @@ export class ConfigWatcher {
       return;
     }
 
-    // Workspace-level hooks.json
-    if (relativePath === 'hooks.json') {
-      debug('[ConfigWatcher] hooks.json change detected');
-      this.debounce('hooks-config', () => this.handleHooksConfigChange());
+    // Workspace-level automations config file
+    if (relativePath === AUTOMATIONS_CONFIG_FILE) {
+      debug('[ConfigWatcher] automations config change detected:', relativePath);
+      this.debounce('automations-config', () => this.handleAutomationsConfigChange());
       return;
     }
 
@@ -892,11 +893,11 @@ export class ConfigWatcher {
   }
 
   /**
-   * Handle hooks.json change.
+   * Handle automations config change.
    */
-  private handleHooksConfigChange(): void {
-    debug('[ConfigWatcher] hooks.json changed:', this.workspaceId);
-    this.callbacks.onHooksConfigChange?.(this.workspaceId);
+  private handleAutomationsConfigChange(): void {
+    debug('[ConfigWatcher] automations config changed:', this.workspaceId);
+    this.callbacks.onAutomationsConfigChange?.(this.workspaceId);
   }
 
   // ============================================================
@@ -935,7 +936,7 @@ export class ConfigWatcher {
   }
 
   /**
-   * Watch app-level themes directory (~/.ws-workspace/themes/)
+   * Watch app-level themes directory (~/.craft-agent/themes/)
    */
   private watchAppThemesDir(): void {
     const themesDir = getAppThemesDir();
@@ -964,7 +965,7 @@ export class ConfigWatcher {
   }
 
   /**
-   * Watch app-level permissions directory (~/.ws-workspace/permissions/)
+   * Watch app-level permissions directory (~/.craft-agent/permissions/)
    * Watches for changes to default.json which contains the default read-only patterns
    */
   private watchAppPermissionsDir(): void {

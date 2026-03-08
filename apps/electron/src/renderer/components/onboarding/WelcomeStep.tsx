@@ -13,7 +13,7 @@ interface WelcomeStepProps {
  * WelcomeStep - Initial welcome screen for onboarding
  *
  * Shows different messaging for new vs existing users:
- * - New users: Welcome to WS Workspace
+ * - New users: Welcome to Craft Agents
  * - Existing users: Update your API connection settings
  */
 export function WelcomeStep({
@@ -28,7 +28,7 @@ export function WelcomeStep({
           <CraftAgentsSymbol className="size-10 text-accent" />
         </div>
       }
-      title={isExistingUser ? 'Update Settings' : 'Welcome to WS Workspace'}
+      title={isExistingUser ? 'Update Settings' : 'Welcome to Craft Agents'}
       description={
         isExistingUser
           ? 'Update your API connection or change your setup.'

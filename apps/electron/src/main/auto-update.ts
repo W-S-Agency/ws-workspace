@@ -2,8 +2,8 @@
  * Auto-update module using electron-updater
  *
  * Handles checking for updates, downloading, and installing via the standard
- * electron-updater library. Updates are served from GitHub Releases (W-S-Agency/ws-workspace)
- * using the github provider.
+ * electron-updater library. Updates are served from https://agents.craft.do/electron/latest
+ * using the generic provider (YAML manifests + binaries on R2/S3).
  *
  * Platform behavior:
  * - macOS: Downloads zip, extracts and swaps app bundle atomically
@@ -20,14 +20,14 @@ import { platform } from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
 import { mainLog } from './logger'
-import { getAppVersion } from '@ws-workspace/shared/version'
+import { getAppVersion } from '@craft-agent/shared/version'
 import {
   getDismissedUpdateVersion,
   clearDismissedUpdateVersion,
-} from '@ws-workspace/shared/config'
-import { readJsonFileSync } from '@ws-workspace/shared/utils/files'
-import type { UpdateInfo } from '../shared/types'
-import type { WindowManager } from './window-manager'
+} from '@craft-agent/shared/config'
+import { readJsonFileSync } from '@craft-agent/shared/utils/files'
+import { RPC_CHANNELS, type UpdateInfo } from '../shared/types'
+import type { EventSink } from '@craft-agent/server-core/transport'
 
 // Platform detection
 const PLATFORM = platform()
@@ -62,7 +62,7 @@ let updateInfo: UpdateInfo = {
   downloadProgress: 0,
 }
 
-let windowManager: WindowManager | null = null
+let eventSink: EventSink | null = null
 
 // Flag to indicate update is in progress — used to prevent force exit during quitAndInstall
 let __isUpdating = false
@@ -76,10 +76,10 @@ export function isUpdating(): boolean {
 }
 
 /**
- * Set the window manager for broadcasting update events to renderer windows
+ * Set the event sink for broadcasting update events to renderer windows
  */
-export function setWindowManager(wm: WindowManager): void {
-  windowManager = wm
+export function setAutoUpdateEventSink(sink: EventSink): void {
+  eventSink = sink
 }
 
 /**
@@ -94,36 +94,25 @@ export function getUpdateInfo(): UpdateInfo {
  * Creates a snapshot to avoid race conditions during broadcast.
  */
 function broadcastUpdateInfo(): void {
-  if (!windowManager) return
+  if (!eventSink) return
 
   const snapshot = { ...updateInfo }
-  const windows = windowManager.getAllWindows()
-  for (const { window } of windows) {
-    if (!window.isDestroyed()) {
-      window.webContents.send('update:available', snapshot)
-    }
-  }
+  eventSink(RPC_CHANNELS.update.AVAILABLE, { to: 'all' }, snapshot)
 }
 
 /**
  * Broadcast download progress to all renderer windows.
  */
 function broadcastDownloadProgress(progress: number): void {
-  if (!windowManager) return
+  if (!eventSink) return
 
-  const windows = windowManager.getAllWindows()
-  for (const { window } of windows) {
-    if (!window.isDestroyed()) {
-      window.webContents.send('update:downloadProgress', progress)
-    }
-  }
+  eventSink(RPC_CHANNELS.update.DOWNLOAD_PROGRESS, { to: 'all' }, progress)
 }
 
 // ─── Configure electron-updater ───────────────────────────────────────────────
 
-// Disable autoDownload — we trigger downloadUpdate() explicitly in the update-available handler.
-// autoDownload is unreliable: it silently fails to start the download on some systems/versions.
-autoUpdater.autoDownload = false
+// Auto-download updates in the background after detection
+autoUpdater.autoDownload = true
 
 // Install on app quit (if update is downloaded but user hasn't clicked "Restart")
 autoUpdater.autoInstallOnAppQuit = true
@@ -183,18 +172,6 @@ autoUpdater.on('update-available', (info) => {
     downloadProgress: 0,
   }
   broadcastUpdateInfo()
-
-  // Explicitly trigger download — autoDownload is unreliable on some systems
-  mainLog.info('[auto-update] Triggering explicit download...')
-  autoUpdater.downloadUpdate().catch((err) => {
-    mainLog.error('[auto-update] Download failed:', err)
-    updateInfo = {
-      ...updateInfo,
-      downloadState: 'error',
-      error: err instanceof Error ? err.message : 'Download failed',
-    }
-    broadcastUpdateInfo()
-  })
 })
 
 autoUpdater.on('update-not-available', (info) => {
@@ -336,10 +313,16 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
  *
  * @param options.autoDownload - If false, only checks without downloading (for manual "Check Now")
  */
-export async function checkForUpdates(_options: CheckOptions = {}): Promise<UpdateInfo> {
+export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
+  const { autoDownload = true } = options
+
+  // Temporarily override autoDownload for this check if needed
+  // (e.g., manual check from settings shouldn't auto-download on metered connections)
+  const previousAutoDownload = autoUpdater.autoDownload
+  autoUpdater.autoDownload = autoDownload
+
   try {
     // Check for updates - this returns a promise that resolves with the check result
-    // Download is triggered explicitly in the update-available handler (not via autoDownload)
     const result = await autoUpdater.checkForUpdates()
 
     // If update is available and was already downloaded, the update-downloaded event
@@ -370,7 +353,8 @@ export async function checkForUpdates(_options: CheckOptions = {}): Promise<Upda
       error: error instanceof Error ? error.message : 'Check failed',
     }
   } finally {
-    // no cleanup needed — autoDownload is always false, download is explicit
+    // Restore previous autoDownload setting
+    autoUpdater.autoDownload = previousAutoDownload
   }
 
   return getUpdateInfo()

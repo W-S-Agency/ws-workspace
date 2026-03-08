@@ -1,15 +1,15 @@
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
-import { Brain, Check } from 'lucide-react'
-import { Icon_Folder } from '@ws-workspace/ui'
+import { Check } from 'lucide-react'
+import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
-import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@ws-workspace/shared/agent/modes'
+import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type SlashCommandId = 'safe' | 'ask' | 'allow-all' | 'ultrathink'
+export type SlashCommandId = 'safe' | 'ask' | 'allow-all'
 
 /** Union type for all item types in the slash menu */
 export type SlashItemType = 'command' | 'folder'
@@ -89,21 +89,12 @@ const permissionModeCommands: SlashCommand[] = PERMISSION_MODE_ORDER.map(mode =>
   }
 })
 
-const ultrathinkCommand: SlashCommand = {
-  id: 'ultrathink',
-  label: 'Ultrathink',
-  description: 'Extended reasoning for complex problems',
-  icon: <Brain className={MENU_ICON_SIZE} />,
-}
-
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   ...permissionModeCommands,
-  ultrathinkCommand,
 ]
 
 export const DEFAULT_SLASH_COMMAND_GROUPS: CommandGroup[] = [
   { id: 'modes', commands: permissionModeCommands },
-  { id: 'features', commands: [ultrathinkCommand] },
 ]
 
 // ============================================================================
@@ -418,6 +409,7 @@ export function InlineSlashCommand({
   return (
     <div
       ref={menuRef}
+      data-inline-menu
       className={cn('fixed z-dropdown', MENU_CONTAINER_STYLE, className)}
       style={{ left: Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 220, maxWidth: 260 }}
     >
@@ -563,13 +555,6 @@ export function useInlineSlashCommand({
       id: 'modes',
       label: 'Modes',
       items: permissionModeCommands,
-    })
-
-    // Features section
-    result.push({
-      id: 'features',
-      label: 'Features',
-      items: [ultrathinkCommand],
     })
 
     // Recent folders section - sorted alphabetically by folder name, show all

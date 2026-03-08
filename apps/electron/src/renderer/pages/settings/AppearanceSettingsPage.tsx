@@ -93,7 +93,18 @@ const toolIconColumns: ColumnDef<ToolIconMapping>[] = [
 // ============================================
 
 export default function AppearanceSettingsPage() {
-  const { mode, setMode, colorTheme, setColorTheme, font, setFont, activeWorkspaceId, setWorkspaceColorTheme } = useTheme()
+  const {
+    mode,
+    setMode,
+    colorTheme,
+    setColorTheme,
+    font,
+    setFont,
+    activeWorkspaceId,
+    setWorkspaceColorTheme,
+    themeLoadError,
+    themeResolvedFrom,
+  } = useTheme()
   const { workspaces } = useAppShellContext()
 
   // Fetch workspace icons as data URLs (file:// URLs don't work in renderer)
@@ -172,7 +183,7 @@ export default function AppearanceSettingsPage() {
           window.electronAPI.getHomeDir(),
         ])
         setToolIcons(mappings)
-        setToolIconsJsonPath(`${homeDir}/.ws-workspace/tool-icons/tool-icons.json`)
+        setToolIconsJsonPath(`${homeDir}/.craft-agent/tool-icons/tool-icons.json`)
       } catch (error) {
         console.error('Failed to load tool icon mappings:', error)
       }
@@ -265,6 +276,11 @@ export default function AppearanceSettingsPage() {
                     />
                   </SettingsRow>
                 </SettingsCard>
+                {themeLoadError && (
+                  <p className="mt-2 text-xs text-info">
+                    Theme warning: {themeLoadError} ({themeResolvedFrom === 'fallback' ? 'using bundled fallback' : 'using default theme'})
+                  </p>
+                )}
               </SettingsSection>
 
               {/* Workspace Themes */}
@@ -336,7 +352,7 @@ export default function AppearanceSettingsPage() {
               {/* Tool Icons — shows the command → icon mapping used in turn cards */}
               <SettingsSection
                 title="Tool Icons"
-                description="Icons shown next to CLI commands in chat activity. Stored in ~/.ws-workspace/tool-icons/."
+                description="Icons shown next to CLI commands in chat activity. Stored in ~/.craft-agent/tool-icons/."
                 action={
                   toolIconsJsonPath ? (
                     <EditPopover

@@ -1,7 +1,7 @@
 /**
- * WS Workspace Session Viewer
+ * Craft Agent Session Viewer
  *
- * A minimal web app for viewing WS Workspace session transcripts.
+ * A minimal web app for viewing Craft Agent session transcripts.
  * Users can upload session JSON files or view shared sessions via URL.
  *
  * Routes:
@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { StoredSession } from '@ws-workspace/core'
+import type { StoredSession } from '@craft-agent/core'
 import {
   SessionViewer,
   GenericOverlay,
@@ -26,7 +26,7 @@ import {
   type ActivityItem,
   type OverlayData,
   type FileChange,
-} from '@ws-workspace/ui'
+} from '@craft-agent/ui'
 import { SessionUpload } from './components/SessionUpload'
 import { Header } from './components/Header'
 
@@ -143,14 +143,17 @@ export function App() {
   const handleActivityClick = useCallback((activity: ActivityItem) => {
     if (activity.toolName === 'Edit' || activity.toolName === 'Write') {
       const input = activity.toolInput as Record<string, unknown> | undefined
+      // Claude fields are primary; PI fields are additive fallbacks.
       const filePath = (input?.file_path as string) || (input?.path as string) || 'unknown'
       const change: FileChange = {
         id: activity.id,
         filePath,
         toolType: activity.toolName,
-        original: activity.toolName === 'Edit' ? ((input?.old_string as string) || '') : '',
+        original: activity.toolName === 'Edit'
+          ? ((input?.old_string as string) || (input?.oldText as string) || '')
+          : '',
         modified: activity.toolName === 'Edit'
-          ? ((input?.new_string as string) || '')
+          ? ((input?.new_string as string) || (input?.newText as string) || '')
           : ((input?.content as string) || ''),
         error: activity.error || undefined,
       }

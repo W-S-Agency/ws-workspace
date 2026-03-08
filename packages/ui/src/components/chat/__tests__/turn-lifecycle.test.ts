@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { deriveTurnPhase, groupMessagesByTurn, type AssistantTurn } from '../turn-utils'
-import type { Message } from '@ws-workspace/core'
+import type { Message } from '@craft-agent/core'
 
 // ============================================================================
 // Test Helpers

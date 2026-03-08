@@ -19,8 +19,10 @@ export {
   // Callback registry for session-scoped tool notifications
   registerSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
+  mergeSessionScopedToolCallbacks,
   // Types
   type SessionScopedToolCallbacks,
+  type BrowserPaneFns,
   // Auth request types (unified auth flow)
   type AuthRequest,
   type AuthRequestType,
@@ -44,6 +46,8 @@ export {
   PERMISSION_MODE_CONFIG,
   type PermissionMode,
   getModeState,
+  hydratePreviousPermissionMode,
+  getPermissionModeDiagnostics,
   initializeModeState,
   cleanupModeState,
   // Tool blocking (centralized)
@@ -60,6 +64,7 @@ export {
   type ModeState,
   type ModeCallbacks,
   type ModeConfig,
+  type PermissionModeChangedBy,
 } from './mode-manager.ts';
 
 // Export plan types and permission mode messages
@@ -90,7 +95,7 @@ export {
   loadSourcePermissionsConfig,
   getWorkspacePermissionsPath,
   getSourcePermissionsPath,
-  // App-level default permissions (at ~/.ws-workspace/permissions/)
+  // App-level default permissions (at ~/.craft-agent/permissions/)
   getAppPermissionsDir,
   ensureDefaultPermissions,
   loadDefaultPermissions,
@@ -140,6 +145,15 @@ export {
 
 // Export core utilities for shared agent logic
 export * from './core/index.ts';
+
+// Export browser tool name normalization helpers
+export {
+  LEGACY_BROWSER_TOOL_ALIASES,
+  normalizeCanonicalBrowserToolName,
+  normalizeBrowserToolName,
+  isCanonicalBrowserToolName,
+  isBrowserToolNameOrAlias,
+} from './browser-tool-names.ts';
 
 // Export PowerShell validator root setter (for Electron startup on Windows)
 export { setPowerShellValidatorRoot } from './powershell-validator.ts';

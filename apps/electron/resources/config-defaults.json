@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "Default configuration values for WS Workspace",
+  "description": "Default configuration values for Craft Agents",
   "defaults": {
     "notificationsEnabled": true,
     "colorTheme": "default",

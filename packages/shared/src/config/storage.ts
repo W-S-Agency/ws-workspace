@@ -15,7 +15,7 @@ import { expandPath, toPortablePath, getBundledAssetsDir } from '../utils/paths.
 import { debug } from '../utils/debug.ts';
 import { readJsonFileSync } from '../utils/files.ts';
 import { CONFIG_DIR } from './paths.ts';
-import type { StoredAttachment, StoredMessage } from '@ws-workspace/core/types';
+import type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 import type { Plan } from '../agent/plan-types.ts';
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import { type ConfigDefaults } from './config-defaults-schema.ts';
@@ -30,10 +30,10 @@ export type {
   McpAuthType,
   AuthType,
   OAuthCredentials,
-} from '@ws-workspace/core/types';
+} from '@craft-agent/core/types';
 
 // Import for local use
-import type { Workspace, AuthType } from '@ws-workspace/core/types';
+import type { Workspace, AuthType } from '@craft-agent/core/types';
 
 // Import LLM connection types and constants
 import type { LlmConnection } from './llm-connections.ts';
@@ -106,7 +106,7 @@ function syncConfigDefaults(): void {
 }
 
 /**
- * Load config defaults from ~/.ws-workspace/config-defaults.json
+ * Load config defaults from ~/.craft-agent/config-defaults.json
  * This file is synced from bundled assets on every launch.
  */
 export function loadConfigDefaults(): ConfigDefaults {
@@ -128,7 +128,7 @@ export function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
-  // Initialize bundled docs (creates ~/.ws-workspace/docs/ with sources.md, agents.md, permissions.md)
+  // Initialize bundled docs (creates ~/.craft-agent/docs/ with sources.md, agents.md, permissions.md)
   initializeDocs();
 
   // Initialize config defaults
@@ -162,15 +162,21 @@ export function loadStoredConfig(): StoredConfig | null {
       config.activeWorkspaceId = config.workspaces[0]?.id || null;
     }
 
-    // Ensure workspace folder structure exists for all workspaces
+    // Ensure workspace folder structure exists for all workspaces.
+    // Failures here are non-fatal — the workspace will be re-created on next access.
     for (const workspace of config.workspaces) {
       if (!isValidWorkspace(workspace.rootPath)) {
-        createWorkspaceAtPath(workspace.rootPath, workspace.name);
+        try {
+          createWorkspaceAtPath(workspace.rootPath, workspace.name);
+        } catch (wsError) {
+          debug('[config] Failed to create workspace at', workspace.rootPath, ':', wsError instanceof Error ? wsError.message : wsError);
+        }
       }
     }
 
     return config;
-  } catch {
+  } catch (error) {
+    debug('[config] loadStoredConfig failed:', error instanceof Error ? error.message : error);
     return null;
   }
 }
@@ -658,7 +664,7 @@ function ensureWorkspaceDir(workspaceId: string): string {
 
 
 // Re-export types from core for convenience
-export type { StoredAttachment, StoredMessage } from '@ws-workspace/core/types';
+export type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 
 export interface WorkspaceConversation {
   messages: StoredMessage[];
@@ -885,7 +891,7 @@ let presetsInitialized = false;
 
 /**
  * Get the app-level themes directory.
- * Preset themes are stored at ~/.ws-workspace/themes/
+ * Preset themes are stored at ~/.craft-agent/themes/
  */
 export function getAppThemesDir(): string {
   return APP_THEMES_DIR;
@@ -1286,52 +1292,150 @@ function migrateCodexCopilotToPi(config: StoredConfig): boolean {
  * Ensures built-in connections (anthropic, openai) always have models populated,
  * not just compat connections.
  */
+export function shouldMigratePiOpenAiProvider(connection: Pick<LlmConnection, 'providerType' | 'piAuthProvider' | 'authType' | 'baseUrl'>): boolean {
+  // Legacy cleanup: old ChatGPT Plus OAuth connections may still be tagged as `openai`.
+  // Only migrate those to `openai-codex`.
+  //
+  // IMPORTANT: Do NOT migrate API-key or custom-endpoint connections:
+  // - `api_key` / `api_key_with_endpoint` with `openai` must remain regular OpenAI API auth.
+  // - forcing them to `openai-codex` routes requests to ChatGPT backend auth and breaks on restart.
+  if (!isPiProvider(connection.providerType)) return false;
+  if (connection.piAuthProvider !== 'openai') return false;
+  if (connection.authType !== 'oauth') return false;
+  if (typeof connection.baseUrl === 'string' && connection.baseUrl.trim().length > 0) return false;
+  return true;
+}
+
+export function shouldRepairPiApiKeyCodexProvider(connection: Pick<LlmConnection, 'providerType' | 'piAuthProvider' | 'authType'>): boolean {
+  // Repair broken state from previous startup migrations:
+  // API-key connections tagged as `openai-codex` try ChatGPT backend JWT auth and fail.
+  if (!isPiProvider(connection.providerType)) return false;
+  if (connection.piAuthProvider !== 'openai-codex') return false;
+  return connection.authType === 'api_key' || connection.authType === 'api_key_with_endpoint';
+}
+
+function normalizeModelIds(models?: Array<{ id: string } | string>): string[] {
+  if (!models) return [];
+  return models
+    .map(m => typeof m === 'string' ? m : m.id)
+    .filter((id): id is string => !!id && id.trim().length > 0);
+}
+
+function modelSetEquals(a: string[], b: string[]): boolean {
+  const as = new Set(a);
+  const bs = new Set(b);
+  if (as.size !== bs.size) return false;
+  for (const id of as) {
+    if (!bs.has(id)) return false;
+  }
+  return true;
+}
+
+export function inferModelSelectionMode(
+  connection: Pick<LlmConnection, 'models'>,
+  providerDefaultModelIds: string[],
+): 'automaticallySyncedFromProvider' | 'userDefined3Tier' {
+  const currentIds = normalizeModelIds(connection.models);
+  if (currentIds.length === 0) return 'automaticallySyncedFromProvider';
+  return modelSetEquals(currentIds, providerDefaultModelIds)
+    ? 'automaticallySyncedFromProvider'
+    : 'userDefined3Tier';
+}
+
 function backfillAllConnectionModels(config: StoredConfig): boolean {
   if (!config.llmConnections) return false;
   let changed = false;
   for (const connection of config.llmConnections) {
-    // Migrate pi-codex connections from 'openai' to 'openai-codex' provider.
-    // 'openai-codex' uses the ChatGPT Plus backend (chatgpt.com/backend-api),
-    // while 'openai' is for regular API key auth (api.openai.com).
-    if (isPiProvider(connection.providerType) && connection.piAuthProvider === 'openai') {
+    // Repair previously broken API-key migration first.
+    if (shouldRepairPiApiKeyCodexProvider(connection)) {
+      connection.piAuthProvider = 'openai';
+      changed = true;
+    }
+
+    // Migrate only legacy OAuth-backed Pi OpenAI connections to ChatGPT backend provider key.
+    if (shouldMigratePiOpenAiProvider(connection)) {
       connection.piAuthProvider = 'openai-codex';
       changed = true;
     }
 
     const defaultModels = getDefaultModelsForConnection(connection.providerType, connection.piAuthProvider);
     const defaultModel = getDefaultModelForConnection(connection.providerType, connection.piAuthProvider);
+    const providerDefaultModelIds = normalizeModelIds(defaultModels as Array<{ id: string } | string>);
 
-    if (!connection.models || (Array.isArray(connection.models) && connection.models.length === 0)) {
+    if (isPiProvider(connection.providerType) && connection.piAuthProvider) {
+      const mode = connection.modelSelectionMode
+        ?? inferModelSelectionMode(connection, providerDefaultModelIds);
+      if (connection.modelSelectionMode !== mode) {
+        debug('[storage] backfill mode inferred', {
+          slug: connection.slug,
+          piAuthProvider: connection.piAuthProvider,
+          from: connection.modelSelectionMode,
+          to: mode,
+          currentModelCount: normalizeModelIds(connection.models).length,
+        });
+        connection.modelSelectionMode = mode;
+        changed = true;
+      }
+
+      if (mode === 'automaticallySyncedFromProvider') {
+        const currentIds = normalizeModelIds(connection.models);
+        if (providerDefaultModelIds.length > 0 && !modelSetEquals(currentIds, providerDefaultModelIds)) {
+          connection.models = defaultModels;
+          changed = true;
+        }
+      } else {
+        const currentIds = normalizeModelIds(connection.models);
+        if (providerDefaultModelIds.length > 0) {
+          const allowedIds = new Set(providerDefaultModelIds);
+          const canonicalCurrentIds = currentIds.map((id) => {
+            if (allowedIds.has(id)) return id;
+            if (!id.startsWith('pi/')) {
+              const prefixed = `pi/${id}`;
+              if (allowedIds.has(prefixed)) return prefixed;
+            }
+            return id;
+          });
+          const filtered = canonicalCurrentIds.filter(id => allowedIds.has(id));
+
+          if (!modelSetEquals(canonicalCurrentIds, currentIds) || filtered.length !== currentIds.length) {
+            debug('[storage] backfill userDefined filtered', {
+              slug: connection.slug,
+              piAuthProvider: connection.piAuthProvider,
+              beforeCount: currentIds.length,
+              canonicalCount: canonicalCurrentIds.length,
+              afterCount: filtered.length,
+              beforeFirst5: currentIds.slice(0, 5),
+              afterFirst5: filtered.slice(0, 5),
+            });
+            connection.models = filtered;
+            changed = true;
+          }
+
+          if (filtered.length === 0) {
+            debug('[storage] backfill userDefined fallback-to-defaults', {
+              slug: connection.slug,
+              piAuthProvider: connection.piAuthProvider,
+              defaultCount: providerDefaultModelIds.length,
+            });
+            connection.models = defaultModels;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (defaultModels.length > 0 && (!connection.models || (Array.isArray(connection.models) && connection.models.length === 0))) {
       connection.models = defaultModels;
       changed = true;
     }
 
-    // For Pi connections with piAuthProvider, re-filter models to ensure
-    // only models matching the auth provider are shown. This migrates
-    // existing connections that were created before provider-based filtering.
-    if (isPiProvider(connection.providerType) && connection.piAuthProvider && connection.models) {
-      const correctIds = new Set(
-        (defaultModels as Array<{ id: string } | string>).map(m => typeof m === 'string' ? m : m.id)
-      );
-      const currentIds = new Set(
-        connection.models.map(m => typeof m === 'string' ? m : (m as { id: string }).id)
-      );
-      const mismatch = currentIds.size !== correctIds.size
-        || [...currentIds].some(id => !correctIds.has(id))
-        || [...correctIds].some(id => !currentIds.has(id));
-      if (mismatch) {
-        connection.models = defaultModels;
-        changed = true;
-      }
-    }
-
-    if (!connection.defaultModel) {
+    if (!connection.defaultModel && defaultModel) {
       connection.defaultModel = defaultModel;
       changed = true;
     }
 
     // Validate that existing defaultModel is in the models list
-    if (connection.defaultModel && connection.models && Array.isArray(connection.models)) {
+    if (connection.defaultModel && connection.models && Array.isArray(connection.models) && connection.models.length > 0) {
       const modelIds = connection.models.map(m => typeof m === 'string' ? m : m.id);
       if (!modelIds.includes(connection.defaultModel)) {
         // Reset to first available model in the list
@@ -1371,23 +1475,114 @@ function migrateOpus45ToOpus46(config: StoredConfig): boolean {
 
     // Migrate models array
     if (connection.models && Array.isArray(connection.models)) {
-      for (let i = 0; i < connection.models.length; i++) {
-        const model = connection.models[i];
-        if (typeof model === 'string' && model === OPUS_45_ID) {
-          connection.models[i] = OPUS_46_ID;
-          changed = true;
-        } else if (typeof model === 'object' && model.id === OPUS_45_ID) {
-          model.id = OPUS_46_ID;
-          if (model.name?.includes('4.5')) {
-            model.name = model.name.replace('4.5', '4.6');
+      const hasNew = connection.models.some(m =>
+        (typeof m === 'string' ? m : m.id) === OPUS_46_ID
+      );
+
+      if (hasNew) {
+        // New model already exists — just remove the old entry to avoid duplicates
+        const before = connection.models.length;
+        connection.models = connection.models.filter(m =>
+          (typeof m === 'string' ? m : m.id) !== OPUS_45_ID
+        );
+        if (connection.models.length !== before) changed = true;
+      } else {
+        // New model doesn't exist — rename the old entry in place
+        for (let i = 0; i < connection.models.length; i++) {
+          const model = connection.models[i];
+          if (typeof model === 'string' && model === OPUS_45_ID) {
+            connection.models[i] = OPUS_46_ID;
+            changed = true;
+          } else if (typeof model === 'object' && model.id === OPUS_45_ID) {
+            model.id = OPUS_46_ID;
+            if (model.name?.includes('4.5')) {
+              model.name = model.name.replace('4.5', '4.6');
+            }
+            changed = true;
           }
-          changed = true;
         }
       }
     }
   }
 
   return changed;
+}
+
+/**
+ * Migrate Sonnet 4.5 to Sonnet 4.6 for direct Anthropic connections.
+ * Same pattern as migrateOpus45ToOpus46 — updates stored model IDs and names.
+ */
+function migrateSonnet45ToSonnet46(config: StoredConfig): boolean {
+  if (!config.llmConnections) return false;
+
+  const SONNET_45_ID = 'claude-sonnet-4-5-20250929';
+  const SONNET_46_ID = 'claude-sonnet-4-6';
+
+  let changed = false;
+
+  for (const connection of config.llmConnections) {
+    // Only migrate direct Anthropic connections (not compat/third-party)
+    if (connection.providerType !== 'anthropic') continue;
+
+    // Migrate defaultModel
+    if (connection.defaultModel === SONNET_45_ID) {
+      connection.defaultModel = SONNET_46_ID;
+      changed = true;
+    }
+
+    // Migrate models array
+    if (connection.models && Array.isArray(connection.models)) {
+      const hasNew = connection.models.some(m =>
+        (typeof m === 'string' ? m : m.id) === SONNET_46_ID
+      );
+
+      if (hasNew) {
+        // New model already exists — just remove the old entry to avoid duplicates
+        const before = connection.models.length;
+        connection.models = connection.models.filter(m =>
+          (typeof m === 'string' ? m : m.id) !== SONNET_45_ID
+        );
+        if (connection.models.length !== before) changed = true;
+      } else {
+        // New model doesn't exist — rename the old entry in place
+        for (let i = 0; i < connection.models.length; i++) {
+          const model = connection.models[i];
+          if (typeof model === 'string' && model === SONNET_45_ID) {
+            connection.models[i] = SONNET_46_ID;
+            changed = true;
+          } else if (typeof model === 'object' && model.id === SONNET_45_ID) {
+            model.id = SONNET_46_ID;
+            if (model.name?.includes('4.5')) {
+              model.name = model.name.replace('4.5', '4.6');
+            }
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
+ * Migrate Sonnet 4.5 to Sonnet 4.6 in workspace default models.
+ */
+function migrateWorkspaceSonnet45ToSonnet46(config: StoredConfig): void {
+  if (!config.workspaces) return;
+
+  const SONNET_45_ID = 'claude-sonnet-4-5-20250929';
+  const SONNET_46_ID = 'claude-sonnet-4-6';
+
+  for (const workspace of config.workspaces) {
+    const wsConfig = loadWorkspaceConfig(workspace.rootPath);
+    if (!wsConfig?.defaults?.model) continue;
+
+    if (wsConfig.defaults.model === SONNET_45_ID) {
+      wsConfig.defaults.model = SONNET_46_ID;
+      saveWorkspaceConfig(workspace.rootPath, wsConfig);
+    }
+  }
 }
 
 /**
@@ -1575,6 +1770,12 @@ export function migrateLegacyLlmConnectionsConfig(): void {
     }
     // Phase 1e: Migrate Opus 4.5 → Opus 4.6 in workspace default models
     migrateWorkspaceOpus45ToOpus46(config);
+    // Phase 1f: Migrate Sonnet 4.5 → Sonnet 4.6 for direct Anthropic connections
+    if (migrateSonnet45ToSonnet46(config)) {
+      needsSave = true;
+    }
+    // Phase 1g: Migrate Sonnet 4.5 → Sonnet 4.6 in workspace default models
+    migrateWorkspaceSonnet45ToSonnet46(config);
 
     if (needsSave) {
       saveConfig(config);
@@ -1614,6 +1815,7 @@ export function migrateLegacyLlmConnectionsConfig(): void {
         providerType: 'pi',
         authType: 'oauth',
         piAuthProvider: 'openai-codex',
+        modelSelectionMode: 'automaticallySyncedFromProvider',
         models: getDefaultModelsForConnection('pi', 'openai-codex'),
         createdAt: Date.now(),
       };
@@ -1625,6 +1827,7 @@ export function migrateLegacyLlmConnectionsConfig(): void {
         providerType: 'pi',
         authType: 'api_key',
         piAuthProvider: 'openai',
+        modelSelectionMode: 'automaticallySyncedFromProvider',
         models: getDefaultModelsForConnection('pi', 'openai'),
         createdAt: Date.now(),
       };
@@ -1889,6 +2092,9 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
   if (index === -1) return false;
 
   const existing = connections[index]!;
+  const toModelIds = (models?: Array<{ id: string } | string>): string[] =>
+    (models ?? []).map(m => typeof m === 'string' ? m : m.id);
+
   connections[index] = {
     // Preserve required fields from existing
     slug: existing.slug,
@@ -1901,6 +2107,7 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
     baseUrl: updates.baseUrl !== undefined ? updates.baseUrl : existing.baseUrl,
     models: updates.models !== undefined ? updates.models : existing.models,
     defaultModel: updates.defaultModel !== undefined ? updates.defaultModel : existing.defaultModel,
+    modelSelectionMode: updates.modelSelectionMode !== undefined ? updates.modelSelectionMode : existing.modelSelectionMode,
     // Cloud provider fields
     awsRegion: updates.awsRegion !== undefined ? updates.awsRegion : existing.awsRegion,
     gcpProjectId: updates.gcpProjectId !== undefined ? updates.gcpProjectId : existing.gcpProjectId,
@@ -1910,6 +2117,42 @@ export function updateLlmConnection(slug: string, updates: Partial<Omit<LlmConne
     // Timestamps
     lastUsedAt: updates.lastUsedAt !== undefined ? updates.lastUsedAt : existing.lastUsedAt,
   };
+
+  const updated = connections[index]!;
+  if (updated.providerType === 'pi') {
+    const beforeModelIds = toModelIds(existing.models);
+    const afterModelIds = toModelIds(updated.models);
+    const changed =
+      existing.defaultModel !== updated.defaultModel ||
+      existing.modelSelectionMode !== updated.modelSelectionMode ||
+      !modelSetEquals(beforeModelIds, afterModelIds);
+
+    if (changed) {
+      const stack = (new Error().stack ?? '').split('\n').slice(2, 7).map(s => s.trim());
+      debug('[storage] updateLlmConnection(pi) changed', {
+        slug,
+        before: {
+          mode: existing.modelSelectionMode,
+          defaultModel: existing.defaultModel,
+          modelCount: beforeModelIds.length,
+          modelsFirst5: beforeModelIds.slice(0, 5),
+        },
+        after: {
+          mode: updated.modelSelectionMode,
+          defaultModel: updated.defaultModel,
+          modelCount: afterModelIds.length,
+          modelsFirst5: afterModelIds.slice(0, 5),
+        },
+        updates: {
+          keys: Object.keys(updates),
+          defaultModel: updates.defaultModel,
+          modelSelectionMode: updates.modelSelectionMode,
+          modelsCount: Array.isArray(updates.models) ? updates.models.length : undefined,
+        },
+        stack,
+      });
+    }
+  }
 
   saveConfig(config);
   return true;
@@ -2036,7 +2279,7 @@ import { copyFileSync } from 'fs';
 const TOOL_ICONS_DIR_NAME = 'tool-icons';
 
 /**
- * Returns the path to the tool-icons directory: ~/.ws-workspace/tool-icons/
+ * Returns the path to the tool-icons directory: ~/.craft-agent/tool-icons/
  */
 export function getToolIconsDir(): string {
   return join(CONFIG_DIR, TOOL_ICONS_DIR_NAME);

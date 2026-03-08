@@ -18,6 +18,7 @@ export type DocFeature =
   | 'themes'
   | 'app-settings'
   | 'preferences'
+  | 'automations'
 
 export interface DocInfo {
   /** Path relative to DOC_BASE_URL */
@@ -93,13 +94,19 @@ export const DOCS: Record<DocFeature, DocInfo> = {
     path: '/reference/config/config-file',
     title: 'App Settings',
     summary:
-      'Configure global app settings like your default model, authentication method, and workspace list. Settings are stored in ~/.ws-workspace/config.json.',
+      'Configure global app settings like your default model, authentication method, and workspace list. Settings are stored in ~/.craft-agent/config.json.',
   },
   preferences: {
     path: '/reference/config/preferences',
     title: 'Preferences',
     summary:
-      'Personal preferences like your name, timezone, and language that help the agent personalize responses. Stored in ~/.ws-workspace/preferences.json.',
+      'Personal preferences like your name, timezone, and language that help the agent personalize responses. Stored in ~/.craft-agent/preferences.json.',
+  },
+  automations: {
+    path: '/automations/overview',
+    title: 'Automations',
+    summary:
+      'Automate actions when events occur — run commands on schedules, react to label changes, or trigger prompts. Configured in automations.json.',
   },
 }
 

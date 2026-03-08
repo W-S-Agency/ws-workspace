@@ -17,12 +17,12 @@ import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
 import { X, MoreHorizontal, Pencil, Trash2, Star, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, RefreshCcw, Settings2 } from 'lucide-react'
 import type { CredentialHealthStatus, CredentialHealthIssue } from '../../../shared/types'
-import { Spinner, FullscreenOverlayBase } from '@ws-workspace/ui'
+import { Spinner, FullscreenOverlayBase } from '@craft-agent/ui'
 import { useSetAtom } from 'jotai'
 import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
 import { motion, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
-import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@ws-workspace/shared/agent/thinking-levels'
+import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import {
   DropdownMenu,
@@ -533,6 +533,7 @@ export default function AiSettingsPage() {
     baseUrl?: string
     connectionDefaultModel?: string
     activePreset?: string
+    models?: string[]
   } | undefined>(undefined)
   const setFullscreenOverlayOpen = useSetAtom(fullscreenOverlayOpenAtom)
 
@@ -685,7 +686,7 @@ export default function AiSettingsPage() {
       const method = connection.providerType === 'pi'
                    ? (connection.piAuthProvider === 'github-copilot' ? 'pi_copilot_oauth' : 'pi_chatgpt_oauth')
                    : 'claude_oauth'
-      apiSetupOnboarding.handleStartOAuth(method)
+      apiSetupOnboarding.handleStartOAuth(method, connection.slug)
     }
   }, [apiSetupOnboarding, openApiSetup])
 
@@ -704,11 +705,16 @@ export default function AiSettingsPage() {
       .join(', ') || connection.defaultModel || ''
 
     // Set initial values before opening overlay so ApiKeyInput mounts with them
+    const modelIds = connection.models
+      ?.map((m: string | ModelDefinition) => typeof m === 'string' ? m : m.id)
+      .filter(Boolean)
+
     setEditInitialValues({
       apiKey,
       baseUrl: connection.baseUrl,
       connectionDefaultModel: modelStr,
       activePreset: connection.piAuthProvider || undefined,
+      models: modelIds,
     })
 
     // Open overlay and jump directly to credentials step (no reset — jumpToCredentials sets state)

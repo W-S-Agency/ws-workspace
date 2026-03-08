@@ -1,13 +1,13 @@
 import * as React from 'react'
 import { useState, useCallback } from 'react'
 import { Key, User, Lock, Eye, EyeOff, CheckCircle2, XCircle, type LucideIcon } from 'lucide-react'
-import { Spinner } from '@ws-workspace/ui'
+import { Spinner } from '@craft-agent/ui'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import type { Message, CredentialResponse } from '../../../shared/types'
-import type { AuthRequestType, AuthStatus } from '@ws-workspace/core/types'
+import type { AuthRequestType, AuthStatus } from '@craft-agent/core/types'
 import { validateBasicAuthCredentials, getPasswordValue, getPasswordLabel, getPasswordPlaceholder } from '@/utils/auth-validation'
 
 // ============================================================================
@@ -261,16 +261,21 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
   }, [isValid, handleSubmit, handleCancel])
 
   const handleOAuthClick = useCallback(async () => {
-    // Trigger OAuth flow when user clicks - no longer automatic
-    if (!authRequestId) return
+    // Client-driven OAuth: callback server runs locally, server owns tokens
+    if (!authRequestId || !authSourceSlug) return
     setIsSubmitting(true)
     try {
-      await window.electronAPI.sessionCommand(sessionId, { type: 'startOAuth', requestId: authRequestId })
+      await window.electronAPI.performOAuth({
+        sourceSlug: authSourceSlug,
+        sessionId,
+        authRequestId,
+      })
     } catch (error) {
       console.error('Failed to start OAuth:', error)
+    } finally {
       setIsSubmitting(false)
     }
-  }, [sessionId, authRequestId])
+  }, [sessionId, authRequestId, authSourceSlug])
 
   // Get field labels
   const credentialLabel = authLabels?.credential ||

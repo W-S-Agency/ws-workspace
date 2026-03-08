@@ -3,9 +3,10 @@ import {
   parseTestConnectionError,
   createBuiltInConnection,
   validateModelList,
+  validateSetupTestInput,
   BUILT_IN_CONNECTION_TEMPLATES,
-} from '../connection-setup-logic'
-import type { ModelDefinition } from '@ws-workspace/shared/config/models'
+} from '@craft-agent/server-core/domain'
+import type { ModelDefinition } from '@craft-agent/shared/config/models'
 
 // ============================================================
 // validateModelList
@@ -20,7 +21,7 @@ describe('validateModelList', () => {
 
   it('accepts ModelDefinition[] with a matching default', () => {
     const models: ModelDefinition[] = [
-      { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5', shortName: 'Sonnet', description: '', provider: 'anthropic', contextWindow: 200000 },
+      { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', shortName: 'Sonnet', description: '', provider: 'anthropic', contextWindow: 200000 },
       { id: 'claude-haiku-4-5', name: 'Haiku 4.5', shortName: 'Haiku', description: '', provider: 'anthropic', contextWindow: 200000 },
     ]
     const result = validateModelList(models, 'claude-haiku-4-5')
@@ -31,10 +32,10 @@ describe('validateModelList', () => {
   // because the old code used Array.includes() to compare strings against objects
   it('regression: Pi ModelDefinition[] with valid default is accepted', () => {
     const piModels: ModelDefinition[] = [
-      { id: 'pi/claude-sonnet-4-5', name: 'Claude Sonnet 4.5', shortName: 'Sonnet', description: '', provider: 'pi', contextWindow: 200000 },
+      { id: 'pi/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', shortName: 'Sonnet', description: '', provider: 'pi', contextWindow: 200000 },
       { id: 'pi/claude-haiku-4-5', name: 'Claude Haiku 4.5', shortName: 'Haiku', description: '', provider: 'pi', contextWindow: 200000 },
     ]
-    const result = validateModelList(piModels, 'pi/claude-sonnet-4-5')
+    const result = validateModelList(piModels, 'pi/claude-sonnet-4-6')
     expect(result.valid).toBe(true)
   })
 
@@ -96,6 +97,7 @@ describe('createBuiltInConnection', () => {
     const conn = createBuiltInConnection('pi-api-key')
     expect(conn.providerType).toBe('pi')
     expect(conn.authType).toBe('api_key')
+    expect(conn.modelSelectionMode).toBe('automaticallySyncedFromProvider')
   })
 
   it('handles numeric suffix slugs (anthropic-api-2) by deriving from base template', () => {
@@ -128,6 +130,40 @@ describe('createBuiltInConnection', () => {
   it('sets piAuthProvider for github-copilot', () => {
     const conn = createBuiltInConnection('github-copilot')
     expect(conn.piAuthProvider).toBe('github-copilot')
+  })
+})
+
+// ============================================================
+// validateSetupTestInput
+// ============================================================
+
+describe('validateSetupTestInput', () => {
+  it('rejects pi custom endpoint without provider preset', () => {
+    const result = validateSetupTestInput({
+      provider: 'pi',
+      baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/apps/anthropic',
+    })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.error).toContain('requires selecting a provider preset')
+    }
+  })
+
+  it('accepts pi custom endpoint when provider preset is set', () => {
+    const result = validateSetupTestInput({
+      provider: 'pi',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      piAuthProvider: 'openrouter',
+    })
+    expect(result.valid).toBe(true)
+  })
+
+  it('accepts anthropic custom endpoint without piAuthProvider', () => {
+    const result = validateSetupTestInput({
+      provider: 'anthropic',
+      baseUrl: 'https://custom.endpoint.com',
+    })
+    expect(result.valid).toBe(true)
   })
 })
 
@@ -179,6 +215,11 @@ describe('parseTestConnectionError', () => {
   it('maps 403 to permission error', () => {
     const result = parseTestConnectionError('403 Forbidden')
     expect(result).toContain('does not have permission')
+  })
+
+  it('maps provider mismatch API key errors to actionable guidance', () => {
+    const result = parseTestConnectionError('No API key found for huggingface. Use /login or set an API key environment variable.')
+    expect(result).toContain('Provider mismatch during setup')
   })
 
   it('passes through unknown errors truncated to 300 chars', () => {

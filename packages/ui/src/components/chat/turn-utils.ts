@@ -5,7 +5,7 @@
  * Converts the flat Message[] array into grouped turns for email-like display.
  */
 
-import type { Message, StoredMessage, MessageRole } from '@ws-workspace/core'
+import type { Message, StoredMessage, MessageRole } from '@craft-agent/core'
 import type { ActivityItem, ActivityStatus, ActivityType, ResponseContent, TodoItem } from './TurnCard'
 
 // Re-export ActivityItem for consumers
@@ -62,7 +62,6 @@ export function storedToMessage(stored: StoredMessage): Message {
     errorDetails: stored.errorDetails,
     errorOriginal: stored.errorOriginal,
     errorCanRetry: stored.errorCanRetry,
-    ultrathink: stored.ultrathink,
     planPath: stored.planPath,
     // Auth-request fields
     authRequestId: stored.authRequestId,
@@ -121,6 +120,21 @@ export interface AuthRequestTurn {
 }
 
 export type Turn = AssistantTurn | UserTurn | SystemTurn | AuthRequestTurn
+
+/**
+ * Build a stable UI identity key for an assistant turn card.
+ *
+ * Why this exists:
+ * - Backend turnId can be reused across visually split assistant cards
+ *   (e.g., steer/interruption boundaries).
+ * - Expansion state must be keyed by UI-card identity, not raw backend turnId.
+ */
+export function getAssistantTurnUiKey(turn: AssistantTurn, index: number): string {
+  if (turn.response?.messageId) {
+    return `assistant:msg:${turn.response.messageId}`
+  }
+  return `assistant:turn:${turn.turnId}:${turn.timestamp}:${index}`
+}
 
 // ============================================================================
 // Turn Lifecycle Phase
@@ -420,6 +434,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
           currentTurn.response = {
             text: lastTextActivity.content,
             isStreaming: false,
+            messageId: lastTextActivity.id,
           }
         }
       }
@@ -639,6 +654,7 @@ export function groupMessagesByTurn(messages: Message[]): Turn[] {
         text: message.content,
         isStreaming: !!message.isStreaming,
         streamStartTime: message.isStreaming ? message.timestamp : undefined,
+        messageId: message.id,
       }
       currentTurn.isStreaming = !!message.isStreaming
       currentTurn.isComplete = !message.isStreaming

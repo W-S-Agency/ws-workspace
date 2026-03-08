@@ -5,11 +5,11 @@
  * Uses recursive directory watching for simplicity and reliability.
  *
  * Watched paths:
- * - ~/.ws-workspace/config.json - Main app configuration
- * - ~/.ws-workspace/preferences.json - User preferences
- * - ~/.ws-workspace/theme.json - App-level theme overrides
- * - ~/.ws-workspace/themes/*.json - Preset theme files (app-level)
- * - ~/.ws-workspace/workspaces/{slug}/ - Workspace directory (recursive)
+ * - ~/.craft-agent/config.json - Main app configuration
+ * - ~/.craft-agent/preferences.json - User preferences
+ * - ~/.craft-agent/theme.json - App-level theme overrides
+ * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
+ * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - sources/{slug}/config.json, guide.md, permissions.json
  *   - skills/{slug}/SKILL.md, icon.*
  *   - permissions.json
@@ -17,41 +17,44 @@
 
 import { watch, existsSync, readdirSync, statSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname, basename, relative } from 'path';
+import { homedir } from 'os';
 import type { FSWatcher } from 'fs';
-import { CONFIG_DIR } from '@ws-workspace/shared/config/paths';
-import { debug, perf } from '@ws-workspace/shared/utils';
-import { readJsonFileSync } from '@ws-workspace/shared/utils/files';
-import { loadStoredConfig, type StoredConfig } from '@ws-workspace/shared/config';
+import { debug, perf } from '@craft-agent/shared/utils';
+import { readJsonFileSync } from '@craft-agent/shared/utils/files';
+import { loadStoredConfig, type StoredConfig } from '@craft-agent/shared/config';
 import {
   validateConfig,
   validatePreferences,
   validateSource,
   type ValidationResult,
-} from '@ws-workspace/shared/config';
-import type { LoadedSource, SourceGuide } from '@ws-workspace/shared/sources';
+} from '@craft-agent/shared/config';
+import type { LoadedSource, SourceGuide } from '@craft-agent/shared/sources';
 import {
   loadSource,
   loadWorkspaceSources,
   loadSourceGuide,
   sourceNeedsIconDownload,
   downloadSourceIcon,
-} from '@ws-workspace/shared/sources';
-import { permissionsConfigCache, getAppPermissionsDir } from '@ws-workspace/shared/agent';
-import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '@ws-workspace/shared/workspaces';
-import type { LoadedSkill } from '@ws-workspace/shared/skills';
-import { loadSkill, loadAllSkills, skillNeedsIconDownload, downloadSkillIcon } from '@ws-workspace/shared/skills';
+} from '@craft-agent/shared/sources';
+import { AUTOMATIONS_CONFIG_FILE } from '@craft-agent/shared/automations';
+import { permissionsConfigCache, getAppPermissionsDir } from '@craft-agent/shared/agent';
+import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '@craft-agent/shared/workspaces';
+import type { LoadedSkill } from '@craft-agent/shared/skills';
+import { loadSkill, loadAllSkills, skillNeedsIconDownload, downloadSkillIcon } from '@craft-agent/shared/skills';
 import {
   loadStatusConfig,
   statusNeedsIconDownload,
   downloadStatusIcon,
-} from '@ws-workspace/shared/statuses';
-import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from '@ws-workspace/shared/config';
-import type { ThemeOverrides, PresetTheme } from '@ws-workspace/shared/config';
+} from '@craft-agent/shared/statuses';
+import { loadAppTheme, loadPresetThemes, loadPresetTheme, getAppThemesDir } from '@craft-agent/shared/config';
+import type { ThemeOverrides, PresetTheme } from '@craft-agent/shared/config';
+import { readSessionHeader, type SessionHeader } from '@craft-agent/shared/sessions';
 
 // ============================================================
 // Constants
 // ============================================================
 
+const CONFIG_DIR = join(homedir(), '.craft-agent');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const PREFERENCES_FILE = join(CONFIG_DIR, 'preferences.json');
 
@@ -102,7 +105,7 @@ export interface ConfigWatcherCallbacks {
   onSkillsListChange?: (skills: LoadedSkill[]) => void;
 
   // Permissions callbacks
-  /** Called when app-level default permissions change (~/.ws-workspace/permissions/default.json) */
+  /** Called when app-level default permissions change (~/.craft-agent/permissions/default.json) */
   onDefaultPermissionsChange?: () => void;
   /** Called when workspace permissions.json changes */
   onWorkspacePermissionsChange?: (workspaceId: string) => void;
@@ -119,9 +122,9 @@ export interface ConfigWatcherCallbacks {
   /** Called when labels config.json changes */
   onLabelConfigChange?: (workspaceId: string) => void;
 
-  // Hooks callbacks
-  /** Called when hooks.json changes */
-  onHooksConfigChange?: (workspaceId: string) => void;
+  // Automations callbacks
+  /** Called when automations.json changes */
+  onAutomationsConfigChange?: (workspaceId: string) => void;
 
   // Theme callbacks (app-level only)
   /** Called when app-level theme.json changes */
@@ -130,6 +133,10 @@ export interface ConfigWatcherCallbacks {
   onPresetThemeChange?: (themeId: string, theme: PresetTheme | null) => void;
   /** Called when the preset themes list changes (add/remove files) */
   onPresetThemesListChange?: (themes: PresetTheme[]) => void;
+
+  // Session callbacks
+  /** Called when a session header changes (external edits to sessions/{id}/session.jsonl) */
+  onSessionMetadataChange?: (sessionId: string, header: SessionHeader) => void;
 
   // Error callbacks
   /** Called when a validation error occurs */
@@ -349,10 +356,21 @@ export class ConfigWatcher {
       return;
     }
 
-    // Workspace-level hooks.json
-    if (relativePath === 'hooks.json') {
-      debug('[ConfigWatcher] hooks.json change detected - triggering reload');
-      this.debounce('hooks-config', () => this.handleHooksConfigChange());
+    // Workspace-level automations config file
+    if (relativePath === AUTOMATIONS_CONFIG_FILE) {
+      debug('[ConfigWatcher] automations config change detected:', relativePath, '- triggering reload');
+      this.debounce('automations-config', () => this.handleAutomationsConfigChange());
+      return;
+    }
+
+    // Session metadata changes: sessions/{sessionId}/session.jsonl
+    if (parts[0] === 'sessions' && parts.length >= 3) {
+      const sessionId = parts[1]!; // Safe: checked parts.length >= 3
+      const file = parts[2];
+
+      if (file === 'session.jsonl') {
+        this.debounce(`session-metadata:${sessionId}`, () => this.handleSessionMetadataChange(sessionId));
+      }
       return;
     }
 
@@ -434,6 +452,27 @@ export class ConfigWatcher {
         return;
       }
     }
+  }
+
+  /**
+   * Handle session metadata (session.jsonl header) change.
+   */
+  private handleSessionMetadataChange(sessionId: string): void {
+    const sessionFile = join(this.workspaceDir, 'sessions', sessionId, 'session.jsonl');
+
+    // Session may have been deleted/rotated.
+    if (!existsSync(sessionFile)) {
+      debug('[ConfigWatcher] Session metadata file missing:', sessionFile);
+      return;
+    }
+
+    const header = readSessionHeader(sessionFile);
+    if (!header) {
+      debug('[ConfigWatcher] Failed to read session metadata header:', sessionFile);
+      return;
+    }
+
+    this.callbacks.onSessionMetadataChange?.(sessionId, header);
   }
 
   /**
@@ -864,16 +903,16 @@ export class ConfigWatcher {
   }
 
   // ============================================================
-  // Hooks Handlers
+  // Automations Handlers
   // ============================================================
 
   /**
-   * Handle hooks.json change.
-   * Notifies sessions to reload hook configuration.
+   * Handle automations.json change.
+   * Notifies sessions to reload automation configuration.
    */
-  private handleHooksConfigChange(): void {
-    debug('[ConfigWatcher] hooks.json changed:', this.workspaceId);
-    this.callbacks.onHooksConfigChange?.(this.workspaceId);
+  private handleAutomationsConfigChange(): void {
+    debug('[ConfigWatcher] automations config changed:', this.workspaceId);
+    this.callbacks.onAutomationsConfigChange?.(this.workspaceId);
   }
 
   // ============================================================
@@ -890,7 +929,7 @@ export class ConfigWatcher {
   }
 
   /**
-   * Watch app-level themes directory (~/.ws-workspace/themes/)
+   * Watch app-level themes directory (~/.craft-agent/themes/)
    */
   private watchAppThemesDir(): void {
     const themesDir = getAppThemesDir();
@@ -919,7 +958,7 @@ export class ConfigWatcher {
   }
 
   /**
-   * Watch app-level permissions directory (~/.ws-workspace/permissions/)
+   * Watch app-level permissions directory (~/.craft-agent/permissions/)
    * Watches for changes to default.json which contains the default read-only patterns
    */
   private watchAppPermissionsDir(): void {

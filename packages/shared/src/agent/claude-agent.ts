@@ -24,6 +24,7 @@ import { loadPreferences, formatPreferencesForPrompt } from '../config/preferenc
 import type { FileAttachment } from '../utils/files.ts';
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
 import { debug } from '../utils/debug.ts';
+import { guardLargeResult } from '../utils/large-response.ts';
 import {
   getSessionPlansDir,
   getLastPlanFilePath,
@@ -34,9 +35,10 @@ import {
   cleanupSessionScopedTools,
   type AuthRequest,
 } from './session-scoped-tools.ts';
-import { type HookSystem, type SdkHookCallbackMatcher } from '../hooks-simple/index.ts';
+import { type AutomationSystem, type SdkAutomationCallbackMatcher } from '../automations/index.ts';
 import {
   getPermissionMode,
+  getPermissionModeDiagnostics,
   setPermissionMode,
   cyclePermissionMode,
   initializeModeState,
@@ -71,6 +73,11 @@ import type {
   SourceChangeCallback,
   SourceActivationCallback,
 } from './backend/types.ts';
+import { stat } from 'node:fs/promises';
+import { IMAGE_LIMITS } from '../utils/files.ts';
+
+/** Image extensions that may need size-guard in PreToolUse (matches Read tool's image detection) */
+const IMAGE_READ_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff']);
 
 // Re-export permission mode functions for application usage
 export {
@@ -83,10 +90,10 @@ export {
   PERMISSION_MODE_ORDER,
   PERMISSION_MODE_CONFIG,
 } from './mode-manager.ts';
-// Documentation is served via local files at ~/.ws-workspace/docs/
+// Documentation is served via local files at ~/.craft-agent/docs/
 
 // Import and re-export AgentEvent from core (single source of truth)
-import type { AgentEvent } from '@ws-workspace/core/types';
+import type { AgentEvent } from '@craft-agent/core/types';
 export type { AgentEvent };
 
 // Stateless tool matching — pure functions for SDK message → AgentEvent conversion
@@ -102,6 +109,15 @@ export type { LoadedSource } from '../sources/types.ts';
 // Re-exported for backwards compatibility with existing imports from claude-agent.ts
 import { AbortReason, type RecoveryMessage } from './core/index.ts';
 export { AbortReason, type RecoveryMessage };
+
+/** File extensions that can be converted to readable text by CLI tools. */
+const CONVERTIBLE_FILE_HINTS: Record<string, string> = {
+  pdf: 'markitdown or pdf-tool extract',
+  docx: 'markitdown', xlsx: 'markitdown or xlsx-tool read', pptx: 'markitdown or pptx-tool extract',
+  doc: 'markitdown', xls: 'markitdown', ppt: 'markitdown',
+  msg: 'markitdown', eml: 'markitdown', rtf: 'markitdown',
+  ics: 'ical-tool read',
+};
 
 export interface ClaudeAgentConfig {
   workspace: Workspace;
@@ -124,8 +140,8 @@ export interface ClaudeAgentConfig {
   };
   /** System prompt preset for mini agents ('default' | 'mini' or custom string) */
   systemPromptPreset?: 'default' | 'mini' | string;
-  /** Workspace-level HookSystem instance (shared across all agents in the workspace) */
-  hookSystem?: HookSystem;
+  /** Workspace-level AutomationSystem instance (shared across all agents in the workspace) */
+  automationSystem?: AutomationSystem;
   /**
    * Per-session environment variable overrides for the SDK subprocess.
    * Used to pass connection-specific config like ANTHROPIC_BASE_URL that
@@ -311,24 +327,22 @@ const buildWindowsSkillsDirError = buildWindowsSkillsDirErrorFn;
 export class ClaudeAgent extends BaseAgent {
   protected backendName = 'Claude';
   // Note: ClaudeAgentConfig is compatible with BackendConfig, so we use the inherited this.config
-  // hookSystem is inherited from BaseAgent (protected)
   private currentQuery: Query | null = null;
   private currentQueryAbortController: AbortController | null = null;
   private lastAbortReason: AbortReason | null = null;
   private sessionId: string | null = null;
+  private branchFromSdkSessionId: string | null = null;
   private isHeadless: boolean = false;
   private pendingPermissions: Map<string, PendingPermission> = new Map();
   // Permission whitelists are now managed by this.permissionManager (inherited from BaseAgent)
   // Source state tracking is now managed by this.sourceManager (inherited from BaseAgent)
   // Source MCP connections are managed by this.config.mcpPool (centralized in main process)
-  // In-process API source servers (Gmail, Slack, etc.) — these are NOT in the pool
-  // because they use SDK-specific createSdkMcpServer() and handle REST API calls in-process.
-  private sourceApiServers: Record<string, unknown> = {};
+  // Both MCP sources and API sources are routed through the pool.
   // Safe mode state - user-controlled read-only exploration mode
   private safeMode: boolean = false;
   // Event adapter for SDK message → AgentEvent conversion (testable, pluggable)
   private eventAdapter!: ClaudeEventAdapter;
-  // Thinking level and ultrathink override are now managed by BaseAgent
+  // Thinking level is managed by BaseAgent
   // Pinned system prompt components (captured on first chat, used for consistency after compaction)
   private pinnedPreferencesPrompt: string | null = null;
   // Track if preference drift notification has been shown this session
@@ -354,7 +368,20 @@ export class ClaudeAgent extends BaseAgent {
   }
 
   // Callback for permission requests - set by application to receive permission prompts
-  public onPermissionRequest: ((request: { requestId: string; toolName: string; command?: string; description: string; type?: PermissionRequestType }) => void) | null = null;
+  public onPermissionRequest: ((request: {
+    requestId: string;
+    toolName: string;
+    command?: string;
+    description: string;
+    type?: PermissionRequestType;
+    appName?: string;
+    reason?: string;
+    impact?: string;
+    requiresSystemPrompt?: boolean;
+    rememberForMinutes?: number;
+    commandHash?: string;
+    approvalTtlSeconds?: number;
+  }) => void) | null = null;
 
   // Debug callback for status messages
   public onDebug: ((message: string) => void) | null = null;
@@ -407,7 +434,7 @@ export class ClaudeAgent extends BaseAgent {
       miniModel: config.miniModel,
       mcpPool: config.mcpPool,
       connectionSlug: config.connectionSlug,
-      hookSystem: config.hookSystem,
+      automationSystem: config.automationSystem,
     };
 
     // Call BaseAgent constructor - initializes model, thinkingLevel, permissionManager, sourceManager, etc.
@@ -415,6 +442,7 @@ export class ClaudeAgent extends BaseAgent {
     super(backendConfig, DEFAULT_MODEL, CLAUDE_CONTEXT_WINDOW);
 
     this.isHeadless = config.isHeadless ?? false;
+    this.automationSystem = config.automationSystem;
 
     // Initialize event adapter for SDK message → AgentEvent conversion
     this.eventAdapter = new ClaudeEventAdapter({
@@ -428,6 +456,10 @@ export class ClaudeAgent extends BaseAgent {
     // Initialize sessionId from session config for conversation resumption
     if (config.session?.sdkSessionId) {
       this.sessionId = config.session.sdkSessionId;
+    }
+    // Initialize branch params for SDK-level fork (resume parent + forkSession)
+    if (config.session?.branchFromSdkSessionId) {
+      this.branchFromSdkSessionId = config.session.branchFromSdkSessionId;
     }
 
     // Initialize permission mode state with callbacks
@@ -504,7 +536,7 @@ export class ClaudeAgent extends BaseAgent {
   }
 
   // Config watcher methods (startConfigWatcher, stopConfigWatcher) are now inherited from BaseAgent
-  // Thinking level methods (setThinkingLevel, getThinkingLevel, setUltrathinkOverride) are now inherited from BaseAgent
+  // Thinking level methods (setThinkingLevel, getThinkingLevel) are inherited from BaseAgent
 
   // Permission command utilities (getBaseCommand, isDangerousCommand, extractDomainFromNetworkCommand)
   // are now available via this.permissionManager
@@ -674,13 +706,10 @@ export class ClaudeAgent extends BaseAgent {
           type: 'http',
           url: 'https://agents.craft.do/docs/mcp',
         },
-        // Per-source proxy servers from centralized MCP pool (MCP sources like Linear, GitHub)
-        // Each source gets its own SDK server keyed by slug (e.g., 'linear', 'github')
+        // Per-source proxy servers from centralized MCP pool (MCP + API sources)
+        // Each source gets its own SDK server keyed by slug (e.g., 'linear', 'github', 'gmail')
         // so the SDK produces correct tool names: mcp__{slug}__{toolName}
         ...sourceProxies,
-        // In-process API source servers (Gmail, Slack, Stripe, etc.)
-        // These handle REST API calls directly in-process with pre-built credentials.
-        ...this.sourceApiServers,
       };
 
       // Mini agents: filter to minimal set using centralized keys
@@ -701,11 +730,8 @@ export class ClaudeAgent extends BaseAgent {
         debug(`[chat] Custom provider: baseUrl=${activeBaseUrl}, model=${model}, hasApiKey=${!!process.env.ANTHROPIC_API_KEY}`);
       }
 
-      // Determine effective thinking level: ultrathink override boosts to max for this message
-      // Uses inherited protected fields from BaseAgent
-      const effectiveThinkingLevel: ThinkingLevel = this._ultrathinkOverride ? 'max' : this._thinkingLevel;
-      const thinkingTokens = getThinkingTokens(effectiveThinkingLevel, model);
-      debug(`[chat] Thinking: level=${this._thinkingLevel}, override=${this._ultrathinkOverride}, effective=${effectiveThinkingLevel}, tokens=${thinkingTokens}`);
+      const thinkingTokens = getThinkingTokens(this._thinkingLevel, model);
+      debug(`[chat] Thinking: level=${this._thinkingLevel}, tokens=${thinkingTokens}`);
 
       // NOTE: Parent-child tracking for subagents is documented below (search for
       // "PARENT-CHILD TOOL TRACKING"). The SDK's parent_tool_use_id is authoritative.
@@ -744,7 +770,7 @@ export class ClaudeAgent extends BaseAgent {
             this.lastStderrOutput.shift();
           }
         },
-        // Extended thinking: tokens based on effective thinking level (session level + ultrathink override)
+        // Extended thinking: tokens based on session thinking level
         // Non-Claude models don't support extended thinking, so pass 0 to disable
         // Mini agents also disable thinking for efficiency (quick config edits don't need deep reasoning)
         maxThinkingTokens: miniConfig.minimizeThinking ? 0 : (isClaude ? thinkingTokens : 0),
@@ -784,16 +810,16 @@ export class ClaudeAgent extends BaseAgent {
         // This allows Safe Mode to properly allow read-only bash commands without SDK interference
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        // User hooks from hooks.json are merged with internal hooks
+        // User hooks from automations.json are merged with internal hooks
         hooks: (() => {
-          // Build user-defined hooks from hooks.json using the workspace-level HookSystem
-          const userHooks: Partial<Record<string, SdkHookCallbackMatcher[]>> = this.hookSystem?.buildSdkHooks() ?? {};
+          // Build user-defined hooks from automations.json using the workspace-level AutomationSystem
+          const userHooks: Partial<Record<string, SdkAutomationCallbackMatcher[]>> = this.automationSystem?.buildSdkHooks() ?? {};
           if (Object.keys(userHooks).length > 0) {
             debug('[CraftAgent] User SDK hooks loaded:', Object.keys(userHooks).join(', '));
           }
 
           // Internal hooks for permission handling and logging
-          const internalHooks: Record<string, SdkHookCallbackMatcher[]> = {
+          const internalHooks: Record<string, SdkAutomationCallbackMatcher[]> = {
           PreToolUse: [{
             hooks: [async (_hookInput) => {
               // Only handle PreToolUse events
@@ -811,6 +837,49 @@ export class ClaudeAgent extends BaseAgent {
                 this.prerequisiteManager.trackReadTool(input.tool_input as Record<string, unknown>);
               }
 
+              // --- Image size guard for Read tool ---
+              // Must run before runPreToolUseChecks. Once an oversized image enters
+              // the conversation history, the session becomes permanently stuck
+              // (API rejects with 400, SDK reports success, no recovery).
+              if (input.tool_name === 'Read') {
+                const filePath = (input.tool_input as { file_path?: string }).file_path;
+                if (filePath) {
+                  const ext = filePath.toLowerCase().split('.').pop() || '';
+                  if (IMAGE_READ_EXTENSIONS.has(ext)) {
+                    try {
+                      const stats = await stat(filePath);
+
+                      if (stats.size > IMAGE_LIMITS.MAX_RAW_SIZE) {
+                        const sizeMB = (stats.size / (1024 * 1024)).toFixed(1);
+                        this.onDebug?.(`Image ${filePath} is ${sizeMB}MB, attempting resize...`);
+
+                        if (this.config.onImageResize) {
+                          const resizedPath = await this.config.onImageResize(filePath, IMAGE_LIMITS.MAX_RAW_SIZE);
+                          if (resizedPath) {
+                            this.onDebug?.(`Image resized, redirecting Read to: ${resizedPath}`);
+                            return {
+                              continue: true,
+                              hookSpecificOutput: {
+                                hookEventName: 'PreToolUse' as const,
+                                updatedInput: { ...input.tool_input as Record<string, unknown>, file_path: resizedPath },
+                              },
+                            };
+                          }
+                        }
+
+                        return blockWithReason(
+                          `Image too large (${sizeMB}MB). The API limit is 5MB base64 (~3.5MB raw). Use a smaller or compressed version.`
+                        );
+                      }
+                    } catch (err) {
+                      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+                        this.onDebug?.(`Image size check failed for ${filePath}: ${err}`);
+                      }
+                    }
+                  }
+                }
+              }
+
               // Get current permission mode (single source of truth)
               const permissionMode = getPermissionMode(sessionId);
               this.onDebug?.(`PreToolUse hook: ${input.tool_name} (permissionMode=${permissionMode})`);
@@ -821,6 +890,7 @@ export class ClaudeAgent extends BaseAgent {
               const checkResult = runPreToolUseChecks({
                 toolName: input.tool_name,
                 input: toolInput,
+                sessionId,
                 permissionMode,
                 workspaceRootPath: this.workspaceRootPath,
                 workspaceId: extractWorkspaceSlug(this.workspaceRootPath, this.config.workspace.id),
@@ -865,8 +935,19 @@ export class ClaudeAgent extends BaseAgent {
                     },
                   };
 
-                case 'block':
+                case 'block': {
+                  const diagnostics = getPermissionModeDiagnostics(sessionId);
+                  this.onDebug?.(`__PERMISSION_BLOCK__${JSON.stringify({
+                    sessionId,
+                    toolName: input.tool_name,
+                    effectiveMode: diagnostics.permissionMode,
+                    modeVersion: diagnostics.modeVersion,
+                    changedBy: diagnostics.lastChangedBy,
+                    changedAt: diagnostics.lastChangedAt,
+                    reason: checkResult.reason,
+                  })}`);
                   return blockWithReason(checkResult.reason);
+                }
 
                 case 'source_activation_needed': {
                   const { sourceSlug, sourceExists } = checkResult;
@@ -938,6 +1019,13 @@ export class ClaudeAgent extends BaseAgent {
                       command,
                       description: checkResult.description,
                       type: checkResult.promptType,
+                      appName: checkResult.appName,
+                      reason: checkResult.reason,
+                      impact: checkResult.impact,
+                      requiresSystemPrompt: checkResult.requiresSystemPrompt,
+                      rememberForMinutes: checkResult.rememberForMinutes,
+                      commandHash: checkResult.commandHash,
+                      approvalTtlSeconds: checkResult.approvalTtlSeconds,
                     });
                   } else {
                     this.pendingPermissions.delete(requestId);
@@ -996,10 +1084,10 @@ export class ClaudeAgent extends BaseAgent {
           }],
           };
 
-          // Merge internal hooks with user hooks from hooks.json
+          // Merge internal hooks with user hooks from automations.json
           // Internal hooks run first (permissions), then user hooks
-          const mergedHooks: Record<string, SdkHookCallbackMatcher[]> = { ...internalHooks };
-          for (const [event, matchers] of Object.entries(userHooks) as [string, SdkHookCallbackMatcher[]][]) {
+          const mergedHooks: Record<string, SdkAutomationCallbackMatcher[]> = { ...internalHooks };
+          for (const [event, matchers] of Object.entries(userHooks) as [string, SdkAutomationCallbackMatcher[]][]) {
             if (!matchers) continue;
             if (mergedHooks[event]) {
               // Append user hooks after internal hooks
@@ -1014,7 +1102,12 @@ export class ClaudeAgent extends BaseAgent {
         })(),
         // Continue from previous session if we have one (enables conversation history & auto compaction)
         // Skip resume on retry (after session expiry) to start fresh
-        ...(!_isRetry && this.sessionId ? { resume: this.sessionId } : {}),
+        // For branched sessions: fork the parent session so the agent has full conversation context
+        ...(!_isRetry && this.sessionId
+          ? { resume: this.sessionId }
+          : !_isRetry && this.branchFromSdkSessionId
+            ? { resume: this.branchFromSdkSessionId, forkSession: true }
+            : {}),
         mcpServers,
         // NOTE: This callback is NOT called by the SDK because we set `permissionMode: 'bypassPermissions'` above.
         // All permission logic is handled via the PreToolUse hook instead (see hooks.PreToolUse above).
@@ -1034,10 +1127,8 @@ export class ClaudeAgent extends BaseAgent {
 
       // Log resume attempt for debugging session failures
       if (wasResuming) {
-        console.error(`[ClaudeAgent] Attempting to resume SDK session: ${this.sessionId}`);
         debug(`[ClaudeAgent] Attempting to resume SDK session: ${this.sessionId}`);
       } else {
-        console.error(`[ClaudeAgent] Starting fresh SDK session (no resume)`);
         debug(`[ClaudeAgent] Starting fresh SDK session (no resume)`);
       }
 
@@ -1087,6 +1178,7 @@ export class ClaudeAgent extends BaseAgent {
       this.eventAdapter.startTurn();
 
       // Process SDK messages and convert to AgentEvents
+      const summarizeCallback = this.getSummarizeCallback();
       let receivedComplete = false;
       // Track whether we received any assistant content (for empty response detection)
       // When SDK returns empty response (e.g., failed resume), we need to detect and recover
@@ -1169,6 +1261,36 @@ export class ClaudeAgent extends BaseAgent {
               this.resetPrerequisiteState();
             }
 
+            // Intercept large/binary/media-rich tool results — save assets to disk,
+            // preserve original JSON when needed, and/or summarize oversized text.
+            if (event.type === 'tool_result' && !event.isError && event.result) {
+              const guarded = await guardLargeResult(event.result, {
+                sessionPath: metadataSessionDir,
+                toolName: event.toolName || 'unknown',
+                input: event.input,
+                summarize: summarizeCallback,
+              });
+              if (guarded) {
+                yield { ...event, result: guarded };
+                continue;
+              }
+            }
+
+            // Suggest CLI tools when Read fails on convertible file types
+            if (event.type === 'tool_result' && event.toolName === 'Read' && event.isError && event.result) {
+              const filePath = typeof event.input?.file_path === 'string' ? event.input.file_path : undefined;
+              if (filePath) {
+                const ext = filePath.split('.').pop()?.toLowerCase();
+                const hint = ext ? CONVERTIBLE_FILE_HINTS[ext] : undefined;
+                if (hint) {
+                  // Split "or" alternatives into separate backtick-wrapped commands
+                  const commands = hint.split(' or ').map(cmd => `\`${cmd} "${filePath}"\``).join(' or ');
+                  yield { ...event, result: `${event.result}\n\nTip: Use ${commands} to convert this file to readable text.` };
+                  continue;
+                }
+              }
+            }
+
             if (event.type === 'complete') {
               receivedComplete = true;
             }
@@ -1203,7 +1325,7 @@ export class ClaudeAgent extends BaseAgent {
 
         // Defensive: flush any pending text that wasn't emitted
         // This can happen if the SDK sends an assistant message with text but skips the
-        // message_delta event that normally triggers text_complete (e.g., in some ultrathink scenarios)
+        // message_delta event that normally triggers text_complete (rare edge scenarios)
         const flushedEvent = this.eventAdapter.flushPending();
         if (flushedEvent) {
           yield flushedEvent;
@@ -1331,29 +1453,6 @@ export class ClaudeAgent extends BaseAgent {
           return;
         }
 
-        // Check for subprocess pipe/connection errors (ENOTCONN, EPIPE, etc.)
-        // These occur when the SDK subprocess crashes mid-execution or its stdio pipes break.
-        // On Windows, Bun/libuv can produce ENOTCONN when spawning child processes fails
-        // due to pipe state corruption (see oven-sh/bun#23344, #23520).
-        // Recovery: clear session and retry with a fresh subprocess.
-        const isSubprocessPipeError =
-          errorMsg.includes('enotconn') ||
-          errorMsg.includes('epipe') ||
-          errorMsg.includes('failed to write to process stdin') ||
-          errorMsg.includes('cannot write to terminated process') ||
-          errorMsg.includes('processtransport is not ready');
-
-        if (isSubprocessPipeError && !_isRetry) {
-          debug('[ClaudeAgent] Subprocess pipe broken (ENOTCONN/EPIPE), clearing session and retrying...');
-          this.sessionId = null;
-          this.pinnedPreferencesPrompt = null;
-          this.preferencesDriftNotified = false;
-          this.config.onSdkSessionIdCleared?.();
-          yield { type: 'info', message: 'Connection lost, reconnecting...' };
-          yield* this.chat(userMessage, attachments, { isRetry: true });
-          return;
-        }
-
         // Check for SDK process errors - these often wrap underlying billing/auth issues
         // The SDK's internal Claude Code process exits with code 1 for various API errors
         const isProcessError = errorMsg.includes('process exited with code');
@@ -1388,6 +1487,7 @@ export class ClaudeAgent extends BaseAgent {
             console.error('[ClaudeAgent] SDK session expired server-side, clearing and retrying fresh');
             debug('[ClaudeAgent] SDK session expired server-side, clearing and retrying fresh');
             this.sessionId = null;
+            this.config.onSdkSessionIdCleared?.(); // persist cleared ID to JSONL header
             // Clear pinned state so retry captures fresh values
             this.pinnedPreferencesPrompt = null;
             this.preferencesDriftNotified = false;
@@ -1403,6 +1503,28 @@ export class ClaudeAgent extends BaseAgent {
           if (windowsSkillsError) {
             yield windowsSkillsError;
             yield { type: 'complete' };
+            return;
+          }
+
+          // Detect spawn ENOENT — Node.js error when the SDK subprocess binary has
+          // been moved/deleted (e.g., during app bundle swap on auto-update).
+          // Structured fields first (precise), regex fallback for stringified stderr.
+          const spawnError = sdkError as NodeJS.ErrnoException;
+          const isSpawnEnoent =
+            (spawnError.code === 'ENOENT' && spawnError.syscall?.startsWith('spawn')) ||
+            /\bspawn\b[\s\S]*\bENOENT\b/.test(stderrContext || '') ||
+            /\bspawn\b[\s\S]*\bENOENT\b/.test(rawErrorMsg || '');
+
+          if (isSpawnEnoent && !_isRetry) {
+            console.error('[ClaudeAgent] spawn ENOENT detected, retrying in 2s', {
+              sessionId: this.config.session?.id,
+              errorCode: spawnError.code,
+              errorSyscall: spawnError.syscall,
+              stderr: (stderrContext || '').slice(0, 200),
+            });
+            yield { type: 'info', message: 'Reconnecting after update...' };
+            await new Promise(r => setTimeout(r, 2000));
+            yield* this.chat(userMessage, attachments, { isRetry: true });
             return;
           }
 
@@ -1526,9 +1648,6 @@ export class ClaudeAgent extends BaseAgent {
       yield { type: 'complete' };
     } finally {
       this.currentQuery = null;
-      // Reset ultrathink override after query completes (single-shot per-message boost)
-      // Note: thinkingLevel is NOT reset - it's sticky for the session
-      this._ultrathinkOverride = false;
 
       // If a steer message was never delivered (no PreToolUse fired), notify the session
       // layer so it can re-queue the message for the next turn.
@@ -2049,17 +2168,6 @@ export class ClaudeAgent extends BaseAgent {
    * @param intendedSlugs Optional list of source slugs that should be considered active
    *                      (what the UI shows as active, even if build failed)
    */
-  override async setSourceServers(
-    mcpServers: Record<string, SdkMcpServerConfig>,
-    apiServers: Record<string, unknown>,
-    intendedSlugs?: string[]
-  ): Promise<void> {
-    // BaseAgent handles SourceManager state + McpClientPool sync for MCP sources
-    await super.setSourceServers(mcpServers, apiServers, intendedSlugs);
-    // Store API servers separately — they're in-process MCP server instances
-    // (Gmail, Slack, Stripe, etc.) that get added directly to Options.mcpServers
-    this.sourceApiServers = apiServers;
-  }
 
   // isSourceServerActive, getActiveSourceServerNames, setAllSources, getAllSources, markSourceUnseen
   // are now inherited from BaseAgent and delegate to this.sourceManager
@@ -2145,6 +2253,97 @@ export class ClaudeAgent extends BaseAgent {
   }
 
   // getActiveSourceSlugs() is now inherited from BaseAgent
+
+  // ============================================================
+  // Branch preflight
+  // ============================================================
+
+  /**
+   * Ensure branched sessions establish SDK fork context at creation time.
+   * This prevents "fake branches" where transcript history is copied but
+   * backend session context is only attempted later on first user message.
+   */
+  override async ensureBranchReady(): Promise<void> {
+    // Nothing to preflight for non-branched sessions or already-initialized sessions.
+    if (this.sessionId || !this.branchFromSdkSessionId) return;
+
+    const options: Options = {
+      ...getDefaultOptions(this.config.envOverrides),
+      model: this.getModel(),
+      // We only need session initialization/fork; no assistant turn required.
+      maxTurns: 0,
+      resume: this.branchFromSdkSessionId,
+      forkSession: true,
+      // Keep behavior aligned with normal chat options (permissions are enforced via hooks there).
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      tools: { type: 'preset', preset: 'claude_code' },
+    };
+
+    const BRANCH_PREFLIGHT_TIMEOUT = 15_000;
+    let capturedSessionId: string | null = null;
+    let preflightQuery: Query | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      preflightQuery = query({ prompt: ' ', options });
+
+      capturedSessionId = await Promise.race([
+        (async () => {
+          for await (const msg of preflightQuery!) {
+            if ('session_id' in msg && msg.session_id) return msg.session_id;
+          }
+          return null;
+        })(),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error('Branch preflight timed out after 15s')),
+            BRANCH_PREFLIGHT_TIMEOUT
+          );
+        }),
+      ]);
+    } catch (error) {
+      // On error/timeout: interrupt() is needed to kill the SDK subprocess
+      // and stop the detached async iterator. Race it against a 2s timeout
+      // so a stuck subprocess can't block the catch path indefinitely.
+      if (preflightQuery) {
+        // Temporarily suppress ERR_STREAM_WRITE_AFTER_END that the SDK may
+        // emit during interrupt — it has no stdin error handler (SDK bug).
+        const suppress = (err: Error & { code?: string }) => {
+          if (err.code === 'ERR_STREAM_WRITE_AFTER_END') return;
+          throw err;
+        };
+        process.prependOnceListener('uncaughtException', suppress);
+        try {
+          await Promise.race([
+            preflightQuery.interrupt(),
+            new Promise<void>(r => setTimeout(r, 2000)),
+          ]);
+        } catch {
+          // Best-effort cleanup — ignore errors
+        } finally {
+          process.removeListener('uncaughtException', suppress);
+        }
+      }
+      throw new Error(
+        `Failed to establish branch context: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      // On SUCCESS: skip interrupt(). The query completed and will clean up
+      // naturally. Calling interrupt() here races with the SDK's internal
+      // stream teardown — if the subprocess exits between the interrupt
+      // request write and stdin.end(), the SDK emits ERR_STREAM_WRITE_AFTER_END
+      // as an uncaught exception (SDK bug: no 'error' handler on processStdin).
+    }
+
+    if (!capturedSessionId) {
+      throw new Error('Failed to establish branch context during creation: no forked session ID received');
+    }
+
+    this.sessionId = capturedSessionId;
+    this.config.onSdkSessionIdUpdate?.(capturedSessionId);
+  }
 
   // ============================================================
   // Mini Completion (for title generation and other quick tasks)

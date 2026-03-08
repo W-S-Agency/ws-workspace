@@ -69,6 +69,7 @@ interface OnboardingWizardProps {
     baseUrl?: string
     connectionDefaultModel?: string
     activePreset?: string
+    models?: string[]
   }
 
   className?: string
@@ -77,7 +78,7 @@ interface OnboardingWizardProps {
 /**
  * OnboardingWizard - Full-screen onboarding flow container
  *
- * Manages the step-by-step flow for setting up WS Workspace:
+ * Manages the step-by-step flow for setting up Craft Agent:
  * 1. Welcome
  * 2. Provider Select (Claude / ChatGPT / Copilot / API Key / Local)
  * 3. Credentials (API Key or OAuth) or Local Model

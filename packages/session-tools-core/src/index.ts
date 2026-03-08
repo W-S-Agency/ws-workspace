@@ -35,6 +35,9 @@ export type {
   TextContent,
   ToolResult,
 
+  // Developer feedback
+  DeveloperFeedback,
+
   // Validation types
   ValidationIssue,
   ValidationResult,
@@ -149,8 +152,12 @@ export {
   handleUpdatePreferences,
   // Transform Data
   handleTransformData,
+  // Script Sandbox
+  handleScriptSandbox,
   // Render Template
   handleRenderTemplate,
+  // Send Developer Feedback
+  handleSendDeveloperFeedback,
 } from './handlers/index.ts';
 
 export type {
@@ -166,7 +173,9 @@ export type {
   CredentialPromptArgs,
   UpdatePreferencesArgs,
   TransformDataArgs,
+  ScriptSandboxArgs,
   RenderTemplateArgs,
+  SendDeveloperFeedbackArgs,
 } from './handlers/index.ts';
 
 // Tool definitions — single source of truth
@@ -182,19 +191,42 @@ export {
   CallLlmSchema,
   UpdatePreferencesSchema,
   TransformDataSchema,
+  ScriptSandboxSchema,
   RenderTemplateSchema,
+  // Browser tool schema
+  BrowserToolSchema,
+  // Developer feedback schema
+  SendDeveloperFeedbackSchema,
   // Descriptions
   TOOL_DESCRIPTIONS,
   // Registry
   SESSION_TOOL_DEFS,
   SESSION_TOOL_NAMES,
+  SESSION_BACKEND_TOOL_NAMES,
+  SESSION_REGISTRY_TOOL_NAMES,
+  SESSION_SAFE_ALLOWED_TOOL_NAMES,
+  SESSION_SAFE_BLOCKED_TOOL_NAMES,
   SESSION_TOOL_REGISTRY,
+  // Filtered helper views
+  getSessionToolDefs,
+  getSessionToolNames,
+  getSessionBackendToolNames,
+  getSessionRegistryToolNames,
+  getSessionToolRegistry,
+  getSessionSafeAllowedToolNames,
+  getSessionSafeBlockedToolNames,
   // JSON Schema converter
   getToolDefsAsJsonSchema,
 } from './tool-defs.ts';
 
 export type {
+  SessionToolExecutionMode,
+  SessionToolSafeMode,
   SessionToolDef,
+  RegistrySessionToolDef,
+  BackendSessionToolDef,
   SessionToolHandler,
   JsonSchemaToolDef,
+  SessionToolFilterOptions,
+  SessionToolNameOptions,
 } from './tool-defs.ts';

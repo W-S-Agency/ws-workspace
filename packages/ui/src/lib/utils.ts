@@ -1,5 +1,5 @@
 /**
- * Utility functions for @ws-workspace/ui
+ * Utility functions for @craft-agent/ui
  */
 
 import { type ClassValue, clsx } from 'clsx'

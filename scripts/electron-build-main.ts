@@ -205,16 +205,14 @@ async function buildSessionServer(): Promise<void> {
 }
 
 // Build the Pi Agent Server (subprocess for Pi SDK sessions)
-// NOTE: Pi agent server source is not included in the open-source release.
-// If src/ is missing, skip the build gracefully.
+// Optional: skips if package directory is missing (e.g., not synced to OSS).
 async function buildPiAgentServer(): Promise<void> {
-  console.log("🥧 Building Pi Agent Server...");
-
-  const srcEntry = join(PI_AGENT_SERVER_DIR, "src/index.ts");
-  if (!existsSync(srcEntry)) {
-    console.log("Skipping Pi Agent Server (src/ not available in open-source build)");
+  if (!existsSync(join(PI_AGENT_SERVER_DIR, "src"))) {
+    console.log("⏭️  Pi agent server skipped (package not found)");
     return;
   }
+
+  console.log("🥧 Building Pi Agent Server...");
 
   // Ensure dist directory exists
   const distDir = join(PI_AGENT_SERVER_DIR, "dist");
@@ -228,7 +226,7 @@ async function buildPiAgentServer(): Promise<void> {
   const proc = spawn({
     cmd: [
       "bun", "build",
-      srcEntry,
+      join(PI_AGENT_SERVER_DIR, "src/index.ts"),
       "--outfile", PI_AGENT_SERVER_OUTPUT,
       "--target", "bun",
       "--format", "esm",

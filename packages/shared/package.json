@@ -1,6 +1,6 @@
 {
-  "name": "@ws-workspace/shared",
-  "version": "0.5.0",
+  "name": "@craft-agent/shared",
+  "version": "0.7.1",
   "license": "Apache-2.0",
   "description": "Shared business logic for Craft Agents - agent, auth, config, credentials, MCP integration",
   "type": "module",
@@ -48,15 +48,19 @@
     "./validation": "./src/validation/index.ts",
     "./version": "./src/version/index.ts",
     "./branding": "./src/branding.ts",
+    "./feature-flags": "./src/feature-flags.ts",
     "./interceptor": "./src/interceptor-common.ts",
     "./search": "./src/search/index.ts",
     "./tools": "./src/tools/index.ts",
     "./mentions": "./src/mentions/index.ts",
-    "./skills/types": "./src/skills/types.ts"
+    "./skills/types": "./src/skills/types.ts",
+    "./automations": "./src/automations/index.ts",
+    "./automations/resolve-config-path": "./src/automations/resolve-config-path.ts",
+    "./protocol": "./src/protocol/index.ts"
   },
   "dependencies": {
-    "@ws-workspace/core": "workspace:*",
-    "@ws-workspace/session-tools-core": "workspace:*",
+    "@craft-agent/core": "workspace:*",
+    "@craft-agent/session-tools-core": "workspace:*",
     "@isaacs/ttlcache": "^2.1.4",
     "@leeoniya/ufuzzy": "^1.0.19",
     "bash-parser": "^0.5.0",

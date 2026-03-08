@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from 'motion/react' // motion used for backdr
 import { Popover, PopoverTrigger, PopoverContent } from './popover'
 import { Button } from './button'
 import { cn } from '@/lib/utils'
-import { usePlatform } from '@ws-workspace/ui'
+import { usePlatform } from '@craft-agent/ui'
 import type { ContentBadge, Session, CreateSessionOptions } from '../../../shared/types'
 import { useActiveWorkspace, useAppShellContext, useSession } from '@/context/AppShellContext'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
@@ -84,6 +84,7 @@ export type EditContextKey =
   | 'add-label'
   | 'edit-views'
   | 'edit-tool-icons'
+  | 'automation-config'
 
 /**
  * Full edit configuration including context for agent and example for UI.
@@ -132,7 +133,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       label: 'Default Permissions',
       filePath: location, // location is the full path for default permissions
       context:
-        'The user is editing app-level default permissions (~/.ws-workspace/permissions/default.json). ' +
+        'The user is editing app-level default permissions (~/.craft-agent/permissions/default.json). ' +
         'This file configures Explore mode rules that apply to ALL workspaces. ' +
         'It can contain: allowedBashPatterns, allowedMcpPatterns, allowedApiEndpoints, blockedTools, and allowedWritePaths. ' +
         'Each pattern can be a string or an object with pattern and comment fields. ' +
@@ -258,7 +259,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       label: 'Preferences Notes',
       filePath: location, // location is the full path for preferences
       context:
-        'The user is editing the notes field in their preferences (~/.ws-workspace/preferences.json). ' +
+        'The user is editing the notes field in their preferences (~/.craft-agent/preferences.json). ' +
         'This is a JSON file. Only modify the "notes" field unless explicitly asked otherwise. ' +
         'The notes field is free-form text that provides context about the user to the AI. ' +
         'After editing, call config_validate with target "preferences" to verify the changes. ' +
@@ -280,7 +281,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Sources can be MCP servers (HTTP/SSE or stdio), REST APIs, or local filesystems. ' +
         'Ask clarifying questions if needed: What service? MCP or API? Auth type? ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
-        'Follow the patterns in ~/.ws-workspace/docs/sources.md. ' +
+        'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
     example: 'Connect to my Craft space',
@@ -298,7 +299,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'APIs connect to REST endpoints with authentication (bearer, header, basic, or query). ' +
         'Ask about the API endpoint URL and auth type. ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
-        'Follow the patterns in ~/.ws-workspace/docs/sources.md. ' +
+        'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
     example: 'Connect to the OpenAI API',
@@ -315,7 +316,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'MCP servers can use HTTP/SSE transport (remote) or stdio transport (local subprocess). ' +
         'Ask about the service they want to connect to and whether it\'s a remote URL or local command. ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
-        'Follow the patterns in ~/.ws-workspace/docs/sources.md. ' +
+        'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
     example: 'Connect to Linear',
@@ -333,7 +334,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'They use existing Read, Write, Glob, Grep tools - no MCP server needed. ' +
         'If unclear, ask about the folder path they want to connect. ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
-        'Follow the patterns in ~/.ws-workspace/docs/sources.md. ' +
+        'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',
     },
     example: 'Connect to my Obsidian vault',
@@ -349,7 +350,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Skills are specialized instructions with a SKILL.md file containing YAML frontmatter (name, description) and markdown instructions. ' +
         'Ask clarifying questions if needed: What should the skill do? When should it trigger? ' +
         'Create the skill folder and SKILL.md in the workspace skills directory. ' +
-        'Follow the patterns in ~/.ws-workspace/docs/skills.md. ' +
+        'Follow the patterns in ~/.craft-agent/docs/skills.md. ' +
         'After creating the skill, call skill_validate with the skill slug to verify the SKILL.md file.',
     },
     example: 'Review PRs following our code standards',
@@ -388,7 +389,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Colors use EntityColor format: string shorthand (e.g. "blue") or { light, dark } object for theme-aware colors. ' +
         'Labels are color-only (no icons) — rendered as colored circles in the UI. ' +
         'Children form a recursive tree structure — array position determines display order. ' +
-        'Read ~/.ws-workspace/docs/labels.md for full format reference. ' +
+        'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
         'Confirm clearly when done.',
     },
     example: 'Add a "Bug" label with red color',
@@ -408,7 +409,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Each rule has: pattern (regex with capture groups), flags (default "gi"), valueTemplate ($1/$2 substitution), description. ' +
         'Multiple rules on the same label = multiple ways to trigger. The "g" flag is always enforced. ' +
         'Avoid catastrophic backtracking patterns (e.g., (a+)+). ' +
-        'Read ~/.ws-workspace/docs/labels.md for full format reference. ' +
+        'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
         'Confirm clearly when done.',
     },
     example: 'Add a rule to detect GitHub issue URLs',
@@ -428,7 +429,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Each label has: id (slug, globally unique), name (display), color (optional EntityColor), children (sub-labels array). ' +
         'Colors use EntityColor format: string shorthand (e.g. "blue") or { light, dark } object for theme-aware colors. ' +
         'Labels are color-only (no icons) — rendered as colored circles in the UI. ' +
-        'Read ~/.ws-workspace/docs/labels.md for full format reference. ' +
+        'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
         'Confirm clearly when done.',
     },
     example: 'A red "Bug" label',
@@ -466,11 +467,11 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       filePath: location, // location is the full path to tool-icons.json
       context:
         'The user wants to edit CLI tool icon mappings. ' +
-        'The file is tool-icons.json in ~/.ws-workspace/tool-icons/. Icon image files live in the same directory. ' +
+        'The file is tool-icons.json in ~/.craft-agent/tool-icons/. Icon image files live in the same directory. ' +
         'Schema: { version: 1, tools: [{ id, displayName, icon, commands }] }. ' +
         'Each tool has: id (unique slug), displayName (shown in UI), icon (filename like "git.ico"), commands (array of CLI command names). ' +
         'Supported icon formats: .png, .ico, .svg, .jpg. Icons display at 20x20px. ' +
-        'Read ~/.ws-workspace/docs/tool-icons.md for full format reference. ' +
+        'Read ~/.craft-agent/docs/tool-icons.md for full format reference. ' +
         'After editing, call config_validate with target "tool-icons" to verify the changes are valid. ' +
         'Confirm clearly when done.',
     },
@@ -478,6 +479,23 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     model: 'haiku',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
+  }),
+
+  'automation-config': (location) => ({
+    context: {
+      label: 'Automation Configuration',
+      filePath: `${location}/automations.json`,
+      context:
+        'The user is editing automations.json which configures automations. ' +
+        'Structure: { version: 2, automations: { EventName: [{ name?, matcher?, cron?, timezone?, permissionMode?, labels?, actions: [...] }] } }. ' +
+        'Each event maps to an array of matcher entries. Each matcher has an actions array ({ type: "prompt", prompt }). ' +
+        'Read ~/.craft-agent/docs/automations.md for full format reference. ' +
+        'After editing, confirm clearly what changed.',
+    },
+    example: 'Change the cron schedule to every 30 minutes',
+    model: 'sonnet',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 }
 
@@ -940,11 +958,10 @@ export function EditPopover({
             {/* Container */}
             <div
               ref={popoverRef}
-              className="relative bg-foreground-2 overflow-hidden w-full h-full"
+              className="relative bg-foreground-2 overflow-hidden w-full h-full shadow-modal-small"
               style={{
                 transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
                 borderRadius: 16,
-                boxShadow: '0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)',
               }}
             >
               {/* Drag handle - floating overlay */}

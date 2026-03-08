@@ -80,6 +80,7 @@ const LlmConnectionSchema = z.object({
   baseUrl: z.string().optional(),
   models: z.array(z.union([z.string(), z.object({ id: z.string() }).passthrough()])).optional(),
   defaultModel: z.string().optional(),
+  modelSelectionMode: z.enum(['automaticallySyncedFromProvider', 'userDefined3Tier']).optional(),
   createdAt: z.number(),
   // Allow additional fields (codexPath, awsRegion, gcpProjectId, etc.)
 }).passthrough();
@@ -332,12 +333,12 @@ export function validateAll(workspaceId?: string, workspaceRoot?: string): Valid
     results.push(validateAllSources(workspaceId));
   }
 
-  // Include skill, status, label, hooks, and permissions validation if workspaceRoot is provided
+  // Include skill, status, label, automations, and permissions validation if workspaceRoot is provided
   if (workspaceRoot) {
     results.push(validateAllSkills(workspaceRoot));
     results.push(validateStatuses(workspaceRoot));
     results.push(validateLabels(workspaceRoot));
-    results.push(validateHooks(workspaceRoot));
+    results.push(validateAutomations(workspaceRoot));
     results.push(validateAllPermissions(workspaceRoot));
   }
 
@@ -412,27 +413,7 @@ const LocalSourceConfigSchema = z.object({
   format: z.string().optional(),
 });
 
-// Source brand and action card schemas
-const SourceCardActionHandlerSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('api'), method: z.string(), path: z.string() }),
-  z.object({ type: z.literal('mcp'), tool: z.string() }),
-  z.object({ type: z.literal('copy') }),
-  z.object({ type: z.literal('open'), urlTemplate: z.string() }),
-]);
-
-const SourceCardActionSchema = z.object({
-  label: z.string().min(1),
-  variant: z.enum(['primary', 'secondary']),
-  handler: SourceCardActionHandlerSchema,
-});
-
-const SourceCardDefinitionSchema = z.object({
-  type: z.string().min(1),
-  label: z.string().min(1),
-  icon: z.string().min(1),
-  actions: z.array(SourceCardActionSchema),
-});
-
+// Source brand schema
 const SourceBrandSchema = z.object({
   color: EntityColorSchema.optional(),
 });
@@ -448,7 +429,6 @@ export const FolderSourceConfigSchema = z.object({
   api: ApiSourceConfigSchema.optional(),
   local: LocalSourceConfigSchema.optional(),
   brand: SourceBrandSchema.optional(),
-  cards: z.array(SourceCardDefinitionSchema).optional(),
   isAuthenticated: z.boolean().optional(),
   lastTestedAt: z.number().int().min(0).optional(),
   // Timestamps are optional - manually created configs may not have them
@@ -801,7 +781,7 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
         path: 'frontmatter',
         message: `Invalid YAML frontmatter: ${e instanceof Error ? e.message : 'Unknown error'}`,
         severity: 'error',
-        suggestion: 'See ~/.ws-workspace/docs/skills.md for SKILL.md format reference',
+        suggestion: 'See ~/.craft-agent/docs/skills.md for SKILL.md format reference',
       }],
       warnings: [],
     };
@@ -1335,7 +1315,7 @@ import {
   getSourcePermissionsPath,
   getAppPermissionsDir,
 } from '../agent/permissions-config.ts';
-import { validateHooksContent, validateHooks } from '../hooks-simple/index.ts';
+import { validateAutomationsContent, validateAutomations, AUTOMATIONS_CONFIG_FILE } from '../automations/index.ts';
 
 /**
  * Internal: Validate a single permissions.json file
@@ -1784,7 +1764,7 @@ export function validateToolIcons(): ValidationResult {
               path: `tools[id=${tool.id}].icon`,
               message: `Icon file '${tool.icon}' not found in tool-icons directory`,
               severity: 'warning',
-              suggestion: `Place '${tool.icon}' in ~/.ws-workspace/tool-icons/`,
+              suggestion: `Place '${tool.icon}' in ~/.craft-agent/tool-icons/`,
             });
           }
         }
@@ -1856,7 +1836,7 @@ export function formatValidationResult(result: ValidationResult): string {
  * Result of detecting what type of config file a path corresponds to.
  */
 export interface ConfigFileDetection {
-  type: 'source' | 'skill' | 'statuses' | 'labels' | 'permissions' | 'tool-icons' | 'hooks';
+  type: 'source' | 'skill' | 'statuses' | 'labels' | 'permissions' | 'tool-icons' | 'automations';
   /** Slug of the source or skill (if applicable) */
   slug?: string;
   /** Display file path for error messages */
@@ -1910,9 +1890,9 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
     return { type: 'labels', displayFile: 'labels/config.json' };
   }
 
-  // Match: hooks.json (workspace-level)
-  if (relativePath === 'hooks.json') {
-    return { type: 'hooks', displayFile: 'hooks.json' };
+  // Match: automations config file
+  if (relativePath === AUTOMATIONS_CONFIG_FILE) {
+    return { type: 'automations', displayFile: relativePath };
   }
 
   // Match: permissions.json (workspace-level)
@@ -1931,11 +1911,11 @@ export function detectConfigFileType(filePath: string, workspaceRootPath: string
 
 /**
  * Detect if a file path corresponds to an app-level config file (outside workspace scope).
- * Checks paths relative to CONFIG_DIR (~/.ws-workspace/).
+ * Checks paths relative to CONFIG_DIR (~/.craft-agent/).
  * Returns null if the path is not a recognized app-level config file.
  *
  * Matches patterns:
- * - ~/.ws-workspace/tool-icons/tool-icons.json → tool icon mappings
+ * - ~/.craft-agent/tool-icons/tool-icons.json → tool icon mappings
  */
 export function detectAppConfigFileType(filePath: string): ConfigFileDetection | null {
   const normalizedPath = filePath.replace(/\\/g, '/');
@@ -1974,8 +1954,8 @@ export function validateConfigFileContent(
       return validateStatusesContent(content);
     case 'labels':
       return validateLabelsContent(content);
-    case 'hooks':
-      return validateHooksContent(content);
+    case 'automations':
+      return validateAutomationsContent(content, detection.displayFile);
     case 'permissions':
       return validatePermissionsContent(content, detection.displayFile);
     case 'tool-icons':
