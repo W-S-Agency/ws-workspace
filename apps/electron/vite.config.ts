@@ -45,10 +45,18 @@ export default defineConfig({
         playground: resolve(__dirname, 'src/renderer/playground.html'),
         'browser-toolbar': resolve(__dirname, 'src/renderer/browser-toolbar.html'),
         'browser-empty-state': resolve(__dirname, 'src/renderer/browser-empty-state.html'),
+      },
+      external: (id) => {
+        // Allow pdfjs-dist worker imports to be resolved
+        if (id.includes('pdfjs-dist/build/pdf.worker')) {
+          return false
+        }
+        return false
       }
     }
   },
   resolve: {
+    preserveSymlinks: false,
     alias: {
       '@': resolve(__dirname, 'src/renderer'),
       '@config': resolve(__dirname, '../../packages/shared/src/config'),
@@ -56,9 +64,12 @@ export default defineConfig({
       // Bun hoists deps to root. This prevents "multiple React copies" error from @craft-agent/ui
       'react': resolve(__dirname, '../../node_modules/react'),
       'react-dom': resolve(__dirname, '../../node_modules/react-dom'),
+      // Force pdfjs-dist to resolve from Bun's .bun directory for workspace packages
+      'pdfjs-dist': resolve(__dirname, '../../node_modules/.bun/pdfjs-dist@4.10.38/node_modules/pdfjs-dist'),
     },
     dedupe: ['react', 'react-dom']
   },
+  assetsInclude: ['**/*.mjs'],
   optimizeDeps: {
     include: ['react', 'react-dom', 'jotai', 'pdfjs-dist'],
     exclude: ['@craft-agent/ui'],

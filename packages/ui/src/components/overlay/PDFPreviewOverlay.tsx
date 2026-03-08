@@ -17,9 +17,13 @@ import { ItemNavigator } from './ItemNavigator'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// Configure pdf.js worker using Vite's ?url import for cross-platform dev/prod compatibility
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
+// TODO: Fix pdf.js worker import for Bun + Vite + workspace packages
+// Temporarily disabled to allow build to complete
+// import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
+
+// Temporary workaround: use CDN worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
 
 interface PreviewItem {
   src: string
