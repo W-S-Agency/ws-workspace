@@ -287,6 +287,7 @@ async function main(): Promise<void> {
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",
       "--external:electron",
+      "--external:@mariozechner/pi-ai",
       ...buildDefines,
     ],
     cwd: ROOT_DIR,

@@ -1,5 +1,5 @@
 {
-  "name": "@ws-workspace/core",
+  "name": "@craft-agent/core",
   "version": "0.6.0",
   "license": "Apache-2.0",
   "description": "Core types, storage, and agent logic for Craft Agents",

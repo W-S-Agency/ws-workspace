@@ -1,5 +1,5 @@
 /**
- * Markdown component exports for @ws-workspace/ui
+ * Markdown component exports for @craft-agent/ui
  */
 
 export { Markdown, MemoizedMarkdown, type MarkdownProps, type RenderMode } from './Markdown'

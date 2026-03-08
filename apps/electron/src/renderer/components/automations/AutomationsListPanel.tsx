@@ -12,7 +12,7 @@
 import * as React from 'react'
 import { useState, useCallback } from 'react'
 import { Webhook } from 'lucide-react'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@ws-workspace/ui'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { EntityRow } from '@/components/ui/entity-row'

@@ -1,5 +1,5 @@
 {
-  "name": "@ws-workspace/session-tools-core",
+  "name": "@craft-agent/session-tools-core",
   "version": "0.6.0",
   "description": "Shared utilities for session-scoped tools (Claude and Codex)",
   "type": "module",

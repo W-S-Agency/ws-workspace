@@ -1,6 +1,6 @@
 import type { ComponentEntry } from './types'
 import { type ReactNode, useState, useCallback, useMemo, useRef } from 'react'
-import { ActionCard } from '@ws-workspace/ui'
+import { ActionCard } from '@craft-agent/ui'
 import {
   flexRender,
   getCoreRowModel,

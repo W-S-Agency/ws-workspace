@@ -7,7 +7,7 @@ import {
   TurnCard,
   type ActivityItem,
   type ResponseContent,
-} from '@ws-workspace/ui'
+} from '@craft-agent/ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { BrowserTabStrip } from '@/components/browser/BrowserTabStrip'
 import { EMPTY_STATE_PROMPT_SAMPLES } from '@/components/browser/empty-state-prompts'

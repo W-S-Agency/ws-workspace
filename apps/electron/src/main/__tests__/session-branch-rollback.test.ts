@@ -35,7 +35,7 @@ mock.module('../notifications', () => ({
   updateBadgeCount: () => {},
 }))
 
-mock.module('@ws-workspace/shared/config', () => ({
+mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaces: () => [workspace],
   loadConfigDefaults: () => ({
@@ -60,7 +60,7 @@ mock.module('@ws-workspace/shared/config', () => ({
   MODEL_REGISTRY: [],
 }))
 
-mock.module('@ws-workspace/shared/workspaces', () => ({
+mock.module('@craft-agent/shared/workspaces', () => ({
   loadWorkspaceConfig: () => ({
     defaults: {
       permissionMode: 'ask',
@@ -70,7 +70,7 @@ mock.module('@ws-workspace/shared/workspaces', () => ({
   }),
 }))
 
-mock.module('@ws-workspace/shared/agent', () => ({
+mock.module('@craft-agent/shared/agent', () => ({
   setPermissionMode: () => {},
   getPermissionModeDiagnostics: () => ({ mode: 'ask', source: 'test' }),
   unregisterSessionScopedToolCallbacks: () => {},
@@ -80,7 +80,7 @@ mock.module('@ws-workspace/shared/agent', () => ({
   },
 }))
 
-mock.module('@ws-workspace/shared/agent/backend', () => ({
+mock.module('@craft-agent/shared/agent/backend', () => ({
   resolveSessionConnection: () => null,
   createBackendFromConnection: () => {
     throw new Error('not used in this test')
@@ -97,7 +97,7 @@ mock.module('@ws-workspace/shared/agent/backend', () => ({
   providerTypeToAgentProvider: () => 'anthropic',
 }))
 
-mock.module('@ws-workspace/shared/sources', () => ({
+mock.module('@craft-agent/shared/sources', () => ({
   loadWorkspaceSources: () => [],
   loadAllSources: () => [],
   getSourcesBySlugs: () => [],
@@ -115,7 +115,7 @@ mock.module('@ws-workspace/shared/sources', () => ({
   createTokenGetter: () => async () => null,
 }))
 
-mock.module('@ws-workspace/shared/automations', () => ({
+mock.module('@craft-agent/shared/automations', () => ({
   AutomationSystem: class AutomationSystem {
     constructor(..._args: unknown[]) {}
     setInitialSessionMetadata() {}
@@ -129,7 +129,7 @@ mock.module('@ws-workspace/shared/automations', () => ({
   AUTOMATIONS_HISTORY_FILE: 'automations.history.jsonl',
 }))
 
-mock.module('@ws-workspace/shared/sessions', () => ({
+mock.module('@craft-agent/shared/sessions', () => ({
   listSessions: () => [],
   loadSession: (_root: string, id: string) => storedById.get(id) ?? null,
   saveSession: async (session: any) => {

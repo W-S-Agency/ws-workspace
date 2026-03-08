@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import * as Icons from 'lucide-react'
-import { Spinner } from '@ws-workspace/ui'
+import { Spinner } from '@craft-agent/ui'
 import {
   DropdownMenu,
   DropdownMenuTrigger,

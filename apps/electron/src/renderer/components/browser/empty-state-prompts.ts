@@ -1,4 +1,4 @@
-import type { BrowserEmptyPromptSample } from '@ws-workspace/ui'
+import type { BrowserEmptyPromptSample } from '@craft-agent/ui'
 
 export const EMPTY_STATE_PROMPT_SAMPLES: readonly BrowserEmptyPromptSample[] = [
   {

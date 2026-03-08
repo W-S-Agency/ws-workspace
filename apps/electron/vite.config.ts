@@ -53,7 +53,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src/renderer'),
       '@config': resolve(__dirname, '../../packages/shared/src/config'),
       // Force all React imports to use the root node_modules React
-      // Bun hoists deps to root. This prevents "multiple React copies" error from @ws-workspace/ui
+      // Bun hoists deps to root. This prevents "multiple React copies" error from @craft-agent/ui
       'react': resolve(__dirname, '../../node_modules/react'),
       'react-dom': resolve(__dirname, '../../node_modules/react-dom'),
     },
@@ -61,7 +61,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'jotai', 'pdfjs-dist'],
-    exclude: ['@ws-workspace/ui'],
+    exclude: ['@craft-agent/ui'],
     esbuildOptions: {
       supported: { 'top-level-await': true },
       target: 'esnext'

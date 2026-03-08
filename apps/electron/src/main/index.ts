@@ -71,22 +71,22 @@ import { initModelRefreshService, getModelRefreshService } from './model-fetcher
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@ws-workspace/shared/config'
-import { getDefaultWorkspacesDir } from '@ws-workspace/shared/workspaces'
-import { initializeDocs } from '@ws-workspace/shared/docs'
-import { initializeReleaseNotes } from '@ws-workspace/shared/release-notes'
-import { ensureDefaultPermissions } from '@ws-workspace/shared/agent/permissions-config'
-import { ensureToolIcons, ensurePresetThemes } from '@ws-workspace/shared/config'
-import { setBundledAssetsRoot } from '@ws-workspace/shared/utils'
-import { initializeBackendHostRuntime } from '@ws-workspace/shared/agent/backend'
-import { setPowerShellValidatorRoot } from '@ws-workspace/shared/agent'
+import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
+import { initializeDocs } from '@craft-agent/shared/docs'
+import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
+import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
+import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
+import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
+import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
+import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
-import { setPerfEnabled, enableDebug } from '@ws-workspace/shared/utils'
-import { registerPiModelResolver } from '@ws-workspace/shared/config'
-import { getPiModelsForAuthProvider, getAllPiModels } from '@ws-workspace/shared/config'
+import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
+import { registerPiModelResolver } from '@craft-agent/shared/config'
+import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
 import { initNotificationService, initBadgeIcon, initInstanceBadge } from './notifications'
 import { checkForUpdatesOnLaunch, setWindowManager as setAutoUpdateWindowManager, isUpdating } from './auto-update'
 import { validateGitBashPath } from './git-bash'
@@ -351,7 +351,7 @@ app.whenReady().then(async () => {
 
     // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
     if (process.platform === 'win32') {
-      const { getGitBashPath, clearGitBashPath } = await import('@ws-workspace/shared/config')
+      const { getGitBashPath, clearGitBashPath } = await import('@craft-agent/shared/config')
       const gitBashPath = getGitBashPath()
       if (gitBashPath) {
         const validation = await validateGitBashPath(gitBashPath)
@@ -370,7 +370,7 @@ app.whenReady().then(async () => {
     // before any renderer can send messages. The credential resolver uses lazy
     // import() so it doesn't depend on session manager being initialized first.
     const modelRefreshService = initModelRefreshService(async (slug: string) => {
-      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
+      const { getCredentialManager } = await import('@craft-agent/shared/credentials')
       const manager = getCredentialManager()
       const [apiKey, oauth] = await Promise.all([
         manager.getLlmApiKey(slug).catch(() => null),
@@ -405,7 +405,7 @@ app.whenReady().then(async () => {
     // Run credential health check at startup to detect issues early
     // (corruption, machine migration, missing credentials for default connection)
     try {
-      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
+      const { getCredentialManager } = await import('@craft-agent/shared/credentials')
       const credentialManager = getCredentialManager()
       const health = await credentialManager.checkHealth()
       if (!health.healthy) {
@@ -424,7 +424,7 @@ app.whenReady().then(async () => {
     // Runs after init so config and auth state are available.
     // Derives values from the default LLM connection instead of legacy config fields.
     try {
-      const { getLlmConnection, getDefaultLlmConnection } = await import('@ws-workspace/shared/config')
+      const { getLlmConnection, getDefaultLlmConnection } = await import('@craft-agent/shared/config')
       const workspaces = getWorkspaces()
       const defaultConnSlug = getDefaultLlmConnection()
       const defaultConn = defaultConnSlug ? getLlmConnection(defaultConnSlug) : null

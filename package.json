@@ -1,5 +1,5 @@
 {
-  "name": "ws-workspace",
+  "name": "craft-agent",
   "version": "0.6.0",
   "description": "AI-powered workspace connecting multiple data sources",
   "type": "module",

@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import ReactDOM from 'react-dom/client'
 import { X } from 'lucide-react'
-import { BrowserControls } from '@ws-workspace/ui'
+import { BrowserControls } from '@craft-agent/ui'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import './index.css'
 

@@ -1,5 +1,5 @@
 {
-  "name": "@ws-workspace/session-mcp-server",
+  "name": "@craft-agent/session-mcp-server",
   "version": "0.6.0",
   "license": "Apache-2.0",
   "description": "MCP server that provides session-scoped tools (SubmitPlan, config_validate, etc.) to Codex via stdio transport",
@@ -13,8 +13,8 @@
     "dev": "bun run src/index.ts"
   },
   "dependencies": {
-    "@ws-workspace/session-tools-core": "workspace:*",
-    "@ws-workspace/shared": "workspace:*",
+    "@craft-agent/session-tools-core": "workspace:*",
+    "@craft-agent/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.11.0",
     "zod": "^3.23.0"
   },

@@ -276,7 +276,7 @@ async function runEsbuild(
       platform: "node",
       format: "cjs",
       outfile: join(ROOT_DIR, outfile),
-      external: ["electron"],
+      external: ["electron", "@mariozechner/pi-ai"],
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       define: defines,
       logLevel: "warning",
@@ -495,7 +495,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
-    external: ["electron"],
+    external: ["electron", "@mariozechner/pi-ai"],
     define: oauthDefines,
     logLevel: "info",
   });
@@ -510,7 +510,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/preload.cjs"),
-    external: ["electron"],
+    external: ["electron", "@mariozechner/pi-ai"],
     logLevel: "info",
   });
   await preloadContext.watch();
@@ -524,7 +524,7 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/browser-toolbar-preload.cjs"),
-    external: ["electron"],
+    external: ["electron", "@mariozechner/pi-ai"],
     logLevel: "info",
   });
   await toolbarPreloadContext.watch();

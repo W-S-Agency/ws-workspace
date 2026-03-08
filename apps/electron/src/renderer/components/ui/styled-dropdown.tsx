@@ -1,7 +1,7 @@
 /**
  * Styled Dropdown Components
  *
- * Re-exports from @ws-workspace/ui for shared styling across packages.
+ * Re-exports from @craft-agent/ui for shared styling across packages.
  */
 
 export {
@@ -14,4 +14,4 @@ export {
   StyledDropdownMenuSeparator,
   StyledDropdownMenuSubTrigger,
   StyledDropdownMenuSubContent,
-} from '@ws-workspace/ui'
+} from '@craft-agent/ui'

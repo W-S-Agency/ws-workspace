@@ -1,5 +1,5 @@
 /**
- * @ws-workspace/core
+ * @craft-agent/core
  *
  * Core types and utilities for Craft Agent.
  *
