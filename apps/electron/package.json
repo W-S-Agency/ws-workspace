@@ -1,14 +1,14 @@
 {
-  "name": "@craft-agent/electron",
-  "version": "0.7.1",
-  "description": "Electron desktop app for Craft Agents",
+  "name": "@ws-workspace/electron",
+  "version": "0.8.1",
+  "description": "Electron desktop app for WS Workspace",
   "main": "dist/main.cjs",
   "private": true,
   "author": {
-    "name": "Craft Docs Ltd.",
-    "email": "support@craft.do"
+    "name": "W&S Agency",
+    "email": "info@wsagency.dev"
   },
-  "homepage": "https://agents.craft.do",
+  "homepage": "https://wsagency.dev",
   "license": "MIT",
   "type": "module",
   "engines": {
