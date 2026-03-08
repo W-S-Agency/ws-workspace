@@ -24,6 +24,7 @@ import type {
   LoadedSkill,
   NewChatActionParams,
   LlmConnectionWithStatus,
+  TestAutomationResult,
 } from '../../shared/types'
 import type { SessionStatus as SessionStatusConfig } from '@/config/session-status-config'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
@@ -54,7 +55,7 @@ export interface AppShellContextType {
   /** All skills for this workspace - provided by AppShell component (for @mentions) */
   skills?: LoadedSkill[]
   /** All label configs (tree) for label menu and badge display */
-  labels?: import('@ws-workspace/shared/labels').LabelConfig[]
+  labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when session labels change */
   onSessionLabelsChange?: (sessionId: string, labels: string[]) => void
   /** Enabled permission modes for Shift+Tab cycling */
@@ -68,7 +69,7 @@ export interface AppShellContextType {
 
   // Session callbacks
   onCreateSession: (workspaceId: string, options?: import('../../shared/types').CreateSessionOptions) => Promise<Session>
-  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], badges?: import('@ws-workspace/core').ContentBadge[]) => void
+  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[], badges?: import('@craft-agent/core').ContentBadge[]) => void
   onRenameSession: (sessionId: string, name: string) => void
   onFlagSession: (sessionId: string) => void
   onUnflagSession: (sessionId: string) => void
@@ -86,7 +87,8 @@ export interface AppShellContextType {
     sessionId: string,
     requestId: string,
     allowed: boolean,
-    alwaysAllow: boolean
+    alwaysAllow: boolean,
+    options?: import('../../shared/types').PermissionResponseOptions
   ) => void
 
   // Credential handling
@@ -128,6 +130,9 @@ export interface AppShellContextType {
   // Right sidebar button (for page headers)
   rightSidebarButton?: React.ReactNode
 
+  /** Whether this panel is the focused panel (for multi-panel visual differentiation) */
+  isFocusedPanel?: boolean
+
   // Session list search state (for ChatDisplay highlighting)
   /** Current search query from session list - used to highlight matches in ChatDisplay */
   sessionListSearchQuery?: string
@@ -139,6 +144,20 @@ export interface AppShellContextType {
   chatDisplayRef?: React.RefObject<ChatDisplayHandle>
   /** Callback when ChatDisplay match info changes (for immediate UI updates) */
   onChatMatchInfoChange?: (info: { count: number; index: number }) => void
+
+  // Automation management
+  /** Test an automation by ID — executes its actions and returns results */
+  onTestAutomation?: (automationId: string) => void
+  /** Toggle an automation's enabled state by ID */
+  onToggleAutomation?: (automationId: string) => void
+  /** Duplicate an automation by ID — clones config with " Copy" suffix */
+  onDuplicateAutomation?: (automationId: string) => void
+  /** Delete an automation by ID — removes from automations config */
+  onDeleteAutomation?: (automationId: string) => void
+  /** Map of automationId → last test result */
+  automationTestResults?: Record<string, import('../components/automations/types').TestResult>
+  /** Fetch execution history for an automation by ID */
+  getAutomationHistory?: (automationId: string) => Promise<import('../components/automations/types').ExecutionEntry[]>
 }
 
 const AppShellContext = createContext<AppShellContextType | null>(null)

@@ -2,8 +2,8 @@ import * as React from 'react'
 import { Check, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelIcon } from './label-icon'
-import type { LabelConfig } from '@ws-workspace/shared/labels'
-import { flattenLabels } from '@ws-workspace/shared/labels'
+import type { LabelConfig } from '@craft-agent/shared/labels'
+import { flattenLabels } from '@craft-agent/shared/labels'
 import type { SessionStatus } from '@/config/session-status-config'
 
 // ============================================================================
@@ -276,6 +276,7 @@ export function InlineLabelMenu({
   return (
     <div
       ref={menuRef}
+      data-inline-menu
       className={cn('fixed z-dropdown', MENU_CONTAINER_STYLE, className)}
       style={{ left: Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 200, maxWidth: 260 }}
     >

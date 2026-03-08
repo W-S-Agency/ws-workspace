@@ -11,12 +11,11 @@ import {
   ChevronDown,
   Loader2,
   AlertCircle,
-  Mic,
 } from 'lucide-react'
-import { Icon_Home, Icon_Folder } from '@ws-workspace/ui'
+import { Icon_Home, Icon_Folder } from '@craft-agent/ui'
 
 import * as storage from '@/lib/local-storage'
-import { extractWorkspaceSlugFromPath } from '@ws-workspace/shared/utils/workspace-slug'
+import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -34,10 +33,10 @@ import {
   InlineLabelMenu,
   useInlineLabelMenu,
 } from '@/components/ui/label-menu'
-import type { LabelConfig } from '@ws-workspace/shared/labels'
+import type { LabelConfig } from '@craft-agent/shared/labels'
 import { parseMentions } from '@/lib/mentions'
 import { RichTextInput, type RichTextInputHandle } from '@/components/ui/rich-text-input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@ws-workspace/ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -64,13 +63,11 @@ import { SourceAvatar } from '@/components/ui/source-avatar'
 import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
-import type { PermissionMode } from '@ws-workspace/shared/agent/modes'
-import { PERMISSION_MODE_ORDER } from '@ws-workspace/shared/agent/modes'
-import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelName } from '@ws-workspace/shared/agent/thinking-levels'
+import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelName } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { hasOpenOverlay } from '@/lib/overlay-detection'
-import { EscapeInterruptOverlay } from './EscapeInterruptOverlay'
-import { useVoiceInput } from '@/hooks/useVoiceInput'
+import { ToolbarStatusSlot } from './ToolbarStatusSlot'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -365,11 +362,17 @@ export function FreeFormInput({
     return extractWorkspaceSlugFromPath(workspaceRootPath, workspaceId ?? '')
   }, [workspaceRootPath, workspaceId])
 
+  // Read panel focus state from context (for multi-panel unfocused styling)
+  const appShellContext = useOptionalAppShellContext()
+  const isFocusedPanel = appShellContext?.isFocusedPanel ?? true
+
   // Shuffle placeholder order once per mount so each session feels fresh
+  // Hide placeholder entirely when panel is unfocused in multi-panel layout
   const shuffledPlaceholder = React.useMemo(
     () => Array.isArray(placeholder) ? shuffleArray(placeholder) : placeholder,
     [] // eslint-disable-line react-hooks/exhaustive-deps -- intentionally shuffle only on mount
   )
+  const effectivePlaceholder = isFocusedPanel ? shuffledPlaceholder : ''
 
   // Performance optimization: Always use internal state for typing to avoid parent re-renders
   // Sync FROM parent on mount/change (for restoring drafts)
@@ -515,28 +518,6 @@ export function FreeFormInput({
     window.addEventListener('craft:insert-text', handleInsertText as EventListener)
     return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
   }, [syncToParent, richInputRef])
-
-  // Voice input: record audio and transcribe via Whisper
-  const voiceInput = useVoiceInput({
-    onTranscribed: (text) => {
-      // Append transcribed text to current input (don't replace)
-      const newValue = input ? `${input} ${text}` : text
-      setInput(newValue)
-      syncToParent(newValue)
-      setTimeout(() => {
-        richInputRef.current?.focus()
-        richInputRef.current?.setSelectionRange(newValue.length, newValue.length)
-      }, 0)
-    },
-    copyToClipboard: true,
-  })
-
-  // Listen for global voice input hotkey (Win+Alt+V / Cmd+Option+V)
-  React.useEffect(() => {
-    return window.electronAPI.onVoiceInputHotkeyTriggered(() => {
-      voiceInput.toggleRecording()
-    })
-  }, [voiceInput.toggleRecording])
 
   // Listen for craft:approve-plan events (used by ResponseCard's Accept Plan button)
   // This disables safe mode AND submits the message in one action
@@ -1127,20 +1108,6 @@ export function FreeFormInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Shift+Tab cycles through enabled permission modes
-    if (e.key === 'Tab' && e.shiftKey) {
-      e.preventDefault()
-      e.stopPropagation()
-      // Use enabled modes or fallback to all modes
-      const modes = enabledModes.length >= 2 ? enabledModes : PERMISSION_MODE_ORDER
-      const currentIndex = modes.indexOf(permissionMode)
-      // If current mode not in enabled list, jump to first enabled mode
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % modes.length
-      const nextMode = modes[nextIndex]
-      onPermissionModeChange?.(nextMode)
-      return
-    }
-
     // Don't submit when mention menu is open AND has visible content
     if (inlineMention.isOpen) {
       // Only intercept navigation/selection keys if menu actually shows items or is loading
@@ -1430,7 +1397,7 @@ export function FreeFormInput({
             setIsFocused(false)
             onFocusChange?.(false)
           }}
-          placeholder={shuffledPlaceholder}
+          placeholder={effectivePlaceholder}
           disabled={disabled}
           skills={skills}
           sources={sources}
@@ -1442,10 +1409,13 @@ export function FreeFormInput({
         />
         )}
 
-        {/* Bottom Row: Controls - wrapped in relative container for escape overlay */}
+        {/* Bottom Row: Controls - wrapped in relative container for status slot overlay */}
         <div className="relative">
-          {/* Escape interrupt overlay - shown on first Esc press during processing */}
-          <EscapeInterruptOverlay isVisible={isProcessing && showEscapeOverlay} />
+          {/* Status slot overlay - escape interrupt (highest priority), browser status, etc. */}
+          <ToolbarStatusSlot
+            showEscapeOverlay={isProcessing && showEscapeOverlay}
+            sessionId={sessionId}
+          />
 
           <div className={cn("flex items-center gap-1 px-2 py-2", !compactMode && "border-t border-border/50")}>
           {/* Left side: Context badges - shrinkable so model + send always stay visible */}
@@ -1916,40 +1886,6 @@ Model
               </Tooltip>
             )
           })()}
-
-          {/* 5.5 Voice Input Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className={cn(
-                  "h-7 w-7 rounded-full shrink-0 transition-colors",
-                  voiceInput.isRecording && "bg-destructive/15 text-destructive hover:bg-destructive/25",
-                  voiceInput.isTranscribing && "opacity-50 cursor-wait",
-                )}
-                onClick={voiceInput.toggleRecording}
-                disabled={disabled || voiceInput.isTranscribing}
-              >
-                {voiceInput.isRecording ? (
-                  <Mic className="h-4 w-4 animate-pulse" />
-                ) : voiceInput.isTranscribing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              {voiceInput.isRecording
-                ? 'Stop recording'
-                : voiceInput.isTranscribing
-                  ? 'Transcribing...'
-                  : `Voice input (${isMac ? '⌥⌘V' : 'Win+Alt+V'})`
-              }
-            </TooltipContent>
-          </Tooltip>
 
           {/* 6. Send/Stop Button - Always show stop when processing */}
           {isProcessing ? (

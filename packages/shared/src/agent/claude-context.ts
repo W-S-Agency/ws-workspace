@@ -8,8 +8,9 @@
  * Claude's full feature set.
  */
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
 import { join, basename } from 'path';
+import { CONFIG_DIR } from '../config/paths.ts';
 import type {
   SessionToolContext,
   SessionToolCallbacks,
@@ -23,7 +24,8 @@ import type {
   McpValidationResult,
   ApiTestResult,
   SourceConfig,
-} from '@ws-workspace/session-tools-core';
+  DeveloperFeedback,
+} from '@craft-agent/session-tools-core';
 import {
   validateConfig,
   validateSource,
@@ -37,7 +39,7 @@ import {
   validateAllPermissions,
   validateToolIcons,
 } from '../config/validators.ts';
-import { validateHooks } from '../hooks-simple/index.ts';
+import { validateAutomations } from '../automations/index.ts';
 import {
   validateMcpConnection as validateMcpConnectionImpl,
   validateStdioMcpConnection as validateStdioMcpConnectionImpl,
@@ -68,7 +70,7 @@ import { getSessionPlansPath, getSessionPath, getSessionDataPath } from '../sess
 import { updatePreferences as updatePreferencesImpl } from '../config/preferences.ts';
 
 // Re-export types that may be needed by consumers
-export type { SessionToolContext, SessionToolCallbacks } from '@ws-workspace/session-tools-core';
+export type { SessionToolContext, SessionToolCallbacks } from '@craft-agent/session-tools-core';
 
 /**
  * Options for creating a Claude context
@@ -130,7 +132,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
       }
       return validateAllPermissions(wsPath);
     },
-    validateHooks: (wsPath: string) => validateHooks(wsPath),
+    validateAutomations: (wsPath: string) => validateAutomations(wsPath),
     validateToolIcons: () => validateToolIcons(),
     validateAll: (wsPath: string) => validateAll(wsPath),
     validateSkill: (wsPath: string, slug: string) => validateSkill(wsPath, slug),
@@ -249,6 +251,13 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     credentialManager,
     updatePreferences: (updates: Record<string, unknown>) => {
       updatePreferencesImpl(updates as any);
+    },
+    submitFeedback: (feedback: DeveloperFeedback) => {
+      const feedbackDir = join(CONFIG_DIR, 'feedback');
+      mkdirSync(feedbackDir, { recursive: true });
+      const filePath = join(feedbackDir, `${feedback.id}.json`);
+      writeFileSync(filePath, JSON.stringify(feedback, null, 2), 'utf-8');
+      debug('claude-context', `Developer feedback written to ${filePath}`);
     },
     // Source management
     loadSourceConfig: (sourceSlug: string): SourceConfig | null => {

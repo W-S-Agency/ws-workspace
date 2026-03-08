@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react"
-import type { LabelConfig } from "@ws-workspace/shared/labels"
+import type { LabelConfig } from "@craft-agent/shared/labels"
 import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
 import type { SessionMeta } from "@/atoms/sessions"
 import type { SessionOptions } from "@/hooks/useSessionOptions"
@@ -32,6 +32,8 @@ export interface SessionListContextValue {
   // Per-session lookup maps
   sessionOptions?: Map<string, SessionOptions>
   contentSearchResults: Map<string, ContentSearchResult>
+  /** Whether a session currently has a pending permission/admin prompt */
+  hasPendingPrompt?: (sessionId: string) => boolean
 }
 
 const SessionListContext = createContext<SessionListContextValue | null>(null)

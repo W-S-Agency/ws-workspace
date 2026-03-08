@@ -8,7 +8,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import { existsSync } from 'fs';
-import { resolveBackendHostTooling } from '@ws-workspace/shared/agent/backend';
+import { resolveBackendHostTooling } from '@craft-agent/shared/agent/backend';
 import { ipcLog, searchLog } from './logger';
 
 // Track current search process to cancel on new search

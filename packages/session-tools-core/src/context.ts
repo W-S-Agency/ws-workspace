@@ -130,7 +130,7 @@ export interface ValidatorInterface {
   validateStatuses(workspaceRootPath: string): import('./types.js').ValidationResult;
   validatePreferences(): import('./types.js').ValidationResult;
   validatePermissions(workspaceRootPath: string, sourceSlug?: string): import('./types.js').ValidationResult;
-  validateHooks(workspaceRootPath: string): import('./types.js').ValidationResult;
+  validateAutomations(workspaceRootPath: string): import('./types.js').ValidationResult;
   validateToolIcons(): import('./types.js').ValidationResult;
   validateAll(workspaceRootPath: string): import('./types.js').ValidationResult;
   validateSkill(workspaceRootPath: string, skillSlug: string): import('./types.js').ValidationResult;
@@ -155,7 +155,7 @@ export interface SessionToolContext {
   /** Unique session identifier */
   sessionId: string;
 
-  /** Absolute path to workspace folder (~/.ws-workspace/workspaces/{id}) */
+  /** Absolute path to workspace folder (~/.craft-agent/workspaces/{id}) */
   workspacePath: string;
 
   /** Path to sources folder within workspace */
@@ -289,6 +289,13 @@ export interface SessionToolContext {
   // ============================================================
   // Preferences (for update_user_preferences)
   // ============================================================
+
+  /**
+   * Submit developer feedback. Injected by each backend:
+   * - Claude: writes JSON files to ~/.craft-agent/feedback/
+   * - Codex/Pi: could send over IPC or write directly
+   */
+  submitFeedback?(feedback: import('./types.ts').DeveloperFeedback): void;
 
   /**
    * Update user preferences. Injected by each backend:

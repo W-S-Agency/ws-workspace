@@ -10,7 +10,7 @@ import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@ws-workspace/ui'
+import { Spinner } from '@craft-agent/ui'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 export interface ModelOption {
@@ -43,7 +43,7 @@ export function SearchableModelInput({
   value,
   onChange,
   onBlur,
-  placeholder = 'e.g., anthropic/claude-3.5-sonnet',
+  placeholder = 'e.g., claude-sonnet-4-6',
   models,
   isLoading,
   onFetchModels,

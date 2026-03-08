@@ -6,16 +6,17 @@ import { IPC_CHANNELS, type SessionEvent, type ElectronAPI, type FileAttachment,
 const api: ElectronAPI = {
   // Session management
   getSessions: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SESSIONS),
+  getUnreadSummary: () => ipcRenderer.invoke(IPC_CHANNELS.GET_UNREAD_SUMMARY),
+  markAllSessionsRead: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.MARK_ALL_SESSIONS_READ, workspaceId),
   getSessionMessages: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.GET_SESSION_MESSAGES, sessionId),
   createSession: (workspaceId: string, options?: import('../shared/types').CreateSessionOptions) => ipcRenderer.invoke(IPC_CHANNELS.CREATE_SESSION, workspaceId, options),
-  createSubSession: (workspaceId: string, parentSessionId: string, options?: import('../shared/types').CreateSessionOptions) => ipcRenderer.invoke(IPC_CHANNELS.CREATE_SUB_SESSION, workspaceId, parentSessionId, options),
   deleteSession: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_SESSION, sessionId),
   sendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: import('../shared/types').StoredAttachment[], options?: import('../shared/types').SendMessageOptions) => ipcRenderer.invoke(IPC_CHANNELS.SEND_MESSAGE, sessionId, message, attachments, storedAttachments, options),
   cancelProcessing: (sessionId: string, silent?: boolean) => ipcRenderer.invoke(IPC_CHANNELS.CANCEL_PROCESSING, sessionId, silent),
   killShell: (sessionId: string, shellId: string) => ipcRenderer.invoke(IPC_CHANNELS.KILL_SHELL, sessionId, shellId),
   getTaskOutput: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.GET_TASK_OUTPUT, taskId),
-  respondToPermission: (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) =>
-    ipcRenderer.invoke(IPC_CHANNELS.RESPOND_TO_PERMISSION, sessionId, requestId, allowed, alwaysAllow),
+  respondToPermission: (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: import('../shared/types').PermissionResponseOptions) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RESPOND_TO_PERMISSION, sessionId, requestId, allowed, alwaysAllow, options),
   respondToCredential: (sessionId: string, requestId: string, response: import('../shared/types').CredentialResponse) =>
     ipcRenderer.invoke(IPC_CHANNELS.RESPOND_TO_CREDENTIAL, sessionId, requestId, response),
 
@@ -26,6 +27,9 @@ const api: ElectronAPI = {
   // Pending plan execution (for reload recovery)
   getPendingPlanExecution: (sessionId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_PENDING_PLAN_EXECUTION, sessionId),
+  // Permission mode reconciliation
+  getSessionPermissionModeState: (sessionId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_SESSION_PERMISSION_MODE_STATE, sessionId),
 
   // Workspace management
   getWorkspaces: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WORKSPACES),
@@ -33,8 +37,6 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.CREATE_WORKSPACE, folderPath, name),
   checkWorkspaceSlug: (slug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.CHECK_WORKSPACE_SLUG, slug),
-  getProjects: (workspaceId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GET_PROJECTS, workspaceId),
 
   // Window management
   getWindowWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_WORKSPACE),
@@ -44,6 +46,7 @@ const api: ElectronAPI = {
   switchWorkspace: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.SWITCH_WORKSPACE, workspaceId),
   closeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_WINDOW),
   confirmCloseWindow: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_CONFIRM_CLOSE),
+  cancelCloseWindow: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_CANCEL_CLOSE),
   onCloseRequested: (callback: () => void) => {
     const handler = () => callback()
     ipcRenderer.on(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED, handler)
@@ -60,6 +63,15 @@ const api: ElectronAPI = {
     // Return cleanup function
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.SESSION_EVENT, handler)
+    }
+  },
+  onUnreadSummaryChanged: (callback: (summary: import('../shared/types').UnreadSummary) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, summary: import('../shared/types').UnreadSummary) => {
+      callback(summary)
+    }
+    ipcRenderer.on(IPC_CHANNELS.SESSIONS_UNREAD_SUMMARY_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.SESSIONS_UNREAD_SUMMARY_CHANGED, handler)
     }
   },
 
@@ -257,7 +269,7 @@ const api: ElectronAPI = {
 
   // Sources
   getSources: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.SOURCES_GET, workspaceId),
-  createSource: (workspaceId: string, config: Partial<import('@ws-workspace/shared/sources').FolderSourceConfig>) =>
+  createSource: (workspaceId: string, config: Partial<import('@craft-agent/shared/sources').FolderSourceConfig>) =>
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES_CREATE, workspaceId, config),
   deleteSource: (workspaceId: string, sourceSlug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES_DELETE, workspaceId, sourceSlug),
@@ -299,9 +311,9 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_WRITE_IMAGE, workspaceId, relativePath, base64, mimeType),
 
   // Sources change listener (live updates when sources are added/removed)
-  onSourcesChanged: (callback: (sources: import('@ws-workspace/shared/sources').LoadedSource[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, sources: import('@ws-workspace/shared/sources').LoadedSource[]) => {
-      callback(sources)
+  onSourcesChanged: (callback: (workspaceId: string, sources: import('@craft-agent/shared/sources').LoadedSource[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string, sources: import('@craft-agent/shared/sources').LoadedSource[]) => {
+      callback(workspaceId, sources)
     }
     ipcRenderer.on(IPC_CHANNELS.SOURCES_CHANGED, handler)
     return () => {
@@ -322,9 +334,9 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.SKILLS_OPEN_FINDER, workspaceId, skillSlug),
 
   // Skills change listener (live updates when skills are added/removed/modified)
-  onSkillsChanged: (callback: (skills: import('@ws-workspace/shared/skills').LoadedSkill[]) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, skills: import('@ws-workspace/shared/skills').LoadedSkill[]) => {
-      callback(skills)
+  onSkillsChanged: (callback: (workspaceId: string, skills: import('@craft-agent/shared/skills').LoadedSkill[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string, skills: import('@craft-agent/shared/skills').LoadedSkill[]) => {
+      callback(workspaceId, skills)
     }
     ipcRenderer.on(IPC_CHANNELS.SKILLS_CHANGED, handler)
     return () => {
@@ -400,8 +412,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.LOGO_GET_URL, serviceUrl, provider),
 
   // Theme change listeners (live updates when theme.json files change)
-  onAppThemeChange: (callback: (theme: import('@ws-workspace/shared/config').ThemeOverrides | null) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, theme: import('@ws-workspace/shared/config').ThemeOverrides | null) => {
+  onAppThemeChange: (callback: (theme: import('@craft-agent/shared/config').ThemeOverrides | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => {
       callback(theme)
     }
     ipcRenderer.on(IPC_CHANNELS.THEME_APP_CHANGED, handler)
@@ -469,10 +481,8 @@ const api: ElectronAPI = {
   setRichToolDescriptions: (enabled: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.APPEARANCE_SET_RICH_TOOL_DESCRIPTIONS, enabled),
 
-  updateBadgeCount: (count: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.BADGE_UPDATE, count),
-  clearBadgeCount: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.BADGE_CLEAR),
+  refreshBadge: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.BADGE_REFRESH),
   setDockIconWithBadge: (dataUrl: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.BADGE_SET_ICON, dataUrl),
   onBadgeDraw: (callback: (data: { count: number; iconDataUrl: string }) => void) => {
@@ -482,6 +492,15 @@ const api: ElectronAPI = {
     ipcRenderer.on(IPC_CHANNELS.BADGE_DRAW, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.BADGE_DRAW, handler)
+    }
+  },
+  onBadgeDrawWindows: (callback: (data: { count: number }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { count: number }) => {
+      callback(data)
+    }
+    ipcRenderer.on(IPC_CHANNELS.BADGE_DRAW_WINDOWS, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.BADGE_DRAW_WINDOWS, handler)
     }
   },
   getWindowFocusState: () =>
@@ -507,14 +526,6 @@ const api: ElectronAPI = {
   getGitBranch: (dirPath: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_GIT_BRANCH, dirPath),
 
-  // Agency repos
-  getAgencyRepoStatus: (repoId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_STATUS, repoId),
-  importAgencyRepo: (repoId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_IMPORT, repoId),
-  updateAgencyRepo: (repoId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_UPDATE, repoId),
-
   // Git Bash (Windows)
   checkGitBash: () => ipcRenderer.invoke(IPC_CHANNELS.GITBASH_CHECK),
   browseForGitBash: () => ipcRenderer.invoke(IPC_CHANNELS.GITBASH_BROWSE),
@@ -536,6 +547,42 @@ const api: ElectronAPI = {
   menuPaste: () => ipcRenderer.invoke(IPC_CHANNELS.MENU_PASTE),
   menuSelectAll: () => ipcRenderer.invoke(IPC_CHANNELS.MENU_SELECT_ALL),
 
+  // Browser pane management
+  browserPane: {
+    create: (input?: string | import('../shared/types').BrowserPaneCreateOptions) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_CREATE, input),
+    destroy: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_DESTROY, id),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_LIST),
+    navigate: (id: string, url: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_NAVIGATE, id, url),
+    goBack: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_GO_BACK, id),
+    goForward: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_GO_FORWARD, id),
+    reload: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_RELOAD, id),
+    stop: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_STOP, id),
+    focus: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_PANE_FOCUS, id),
+    emptyStateLaunch: (payload: import('../shared/types').BrowserEmptyStateLaunchPayload) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BROWSER_EMPTY_STATE_LAUNCH, payload),
+    onStateChanged: (callback: (info: import('../shared/types').BrowserInstanceInfo) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, info: import('../shared/types').BrowserInstanceInfo) => {
+        callback(info)
+      }
+      ipcRenderer.on(IPC_CHANNELS.BROWSER_PANE_STATE_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_PANE_STATE_CHANGED, handler)
+    },
+    onRemoved: (callback: (id: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, id: string) => {
+        callback(id)
+      }
+      ipcRenderer.on(IPC_CHANNELS.BROWSER_PANE_REMOVED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_PANE_REMOVED, handler)
+    },
+    onInteracted: (callback: (id: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, id: string) => {
+        callback(id)
+      }
+      ipcRenderer.on(IPC_CHANNELS.BROWSER_PANE_INTERACTED, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.BROWSER_PANE_INTERACTED, handler)
+    },
+  },
+
   // LLM Connections (provider configurations)
   listLlmConnections: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_LIST),
   listLlmConnectionsWithStatus: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_LIST_WITH_STATUS),
@@ -549,15 +596,31 @@ const api: ElectronAPI = {
   setWorkspaceDefaultLlmConnection: (workspaceId: string, slug: string | null) =>
     ipcRenderer.invoke(IPC_CHANNELS.LLM_CONNECTION_SET_WORKSPACE_DEFAULT, workspaceId, slug),
 
-  // Voice Input
-  voiceInputTranscribe: (audioData: Uint8Array, mimeType: string, language?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_TRANSCRIBE, audioData, mimeType, language),
-  voiceInputCopyToClipboard: (text: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.VOICE_INPUT_COPY_TO_CLIPBOARD, text),
-  onVoiceInputHotkeyTriggered: (callback: () => void) => {
-    const handler = () => callback()
-    ipcRenderer.on(IPC_CHANNELS.VOICE_INPUT_HOTKEY_TRIGGERED, handler)
-    return () => { ipcRenderer.removeListener(IPC_CHANNELS.VOICE_INPUT_HOTKEY_TRIGGERED, handler) }
+  // Automation testing (manual trigger from UI)
+  testAutomation: (payload: import('../shared/types').TestAutomationPayload) =>
+    ipcRenderer.invoke(IPC_CHANNELS.TEST_AUTOMATION, payload),
+
+  // Automation state management
+  setAutomationEnabled: (workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_SET_ENABLED, workspaceId, eventName, matcherIndex, enabled),
+  duplicateAutomation: (workspaceId: string, eventName: string, matcherIndex: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_DUPLICATE, workspaceId, eventName, matcherIndex),
+  deleteAutomation: (workspaceId: string, eventName: string, matcherIndex: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_DELETE, workspaceId, eventName, matcherIndex),
+  getAutomationHistory: (workspaceId: string, automationId: string, limit?: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_GET_HISTORY, workspaceId, automationId, limit),
+  getAutomationLastExecuted: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, workspaceId) as Promise<Record<string, number>>,
+
+  // Automations change listener (live updates when automations.json changes on disk)
+  onAutomationsChanged: (callback: (workspaceId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string) => {
+      callback(workspaceId)
+    }
+    ipcRenderer.on(IPC_CHANNELS.AUTOMATIONS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AUTOMATIONS_CHANGED, handler)
+    }
   },
 }
 

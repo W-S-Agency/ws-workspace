@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Markdown, type RenderMode } from '@ws-workspace/ui'
+import { Markdown, type RenderMode } from '@craft-agent/ui'
 
 interface StreamingMarkdownProps {
   content: string

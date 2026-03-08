@@ -27,7 +27,7 @@ export const DEBUG = INTERCEPTOR_LOGGING_ENABLED &&
   (process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1');
 
 /** Config file path for reading settings in the SDK subprocess */
-export const CONFIG_FILE = join(homedir(), '.ws-workspace', 'config.json');
+export const CONFIG_FILE = join(homedir(), '.craft-agent', 'config.json');
 
 /** Session directory — set by env var (subprocess) or setSessionDir() (main process) */
 let _sessionDir: string | null = process.env.CRAFT_SESSION_DIR || null;
@@ -36,7 +36,7 @@ let _sessionDir: string | null = process.env.CRAFT_SESSION_DIR || null;
 // LOGGING
 // ============================================================================
 
-export const LOG_DIR = join(homedir(), '.ws-workspace', 'logs');
+export const LOG_DIR = join(homedir(), '.craft-agent', 'logs');
 export const LOG_FILE = join(LOG_DIR, 'interceptor.log');
 
 // Ensure log directory exists at module load
@@ -126,11 +126,11 @@ function getErrorFilePath(): string {
   // Prefer session-scoped file to avoid cross-session error consumption.
   if (_sessionDir) return join(_sessionDir, 'api-error.json');
   // Fallback for legacy/non-session contexts.
-  return join(homedir(), '.ws-workspace', 'api-error.json');
+  return join(homedir(), '.craft-agent', 'api-error.json');
 }
 
-function getStoredError(): LastApiError | null {
-  const errorFile = getErrorFilePath();
+function getStoredError(sessionDir?: string): LastApiError | null {
+  const errorFile = sessionDir ? join(sessionDir, 'api-error.json') : getErrorFilePath();
   try {
     if (!existsSync(errorFile)) return null;
     const content = readFileSync(errorFile, 'utf-8');
@@ -165,8 +165,8 @@ export function setStoredError(error: LastApiError | null): void {
   }
 }
 
-export function getLastApiError(): LastApiError | null {
-  const error = getStoredError();
+export function getLastApiError(sessionDir?: string): LastApiError | null {
+  const error = getStoredError(sessionDir);
   if (error) {
     const age = Date.now() - error.timestamp;
     if (age < MAX_ERROR_AGE_MS) {

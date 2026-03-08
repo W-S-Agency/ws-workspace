@@ -25,7 +25,7 @@ export interface OAuthCallbacks {
 const CALLBACK_PORT_START = 8914;
 const CALLBACK_PORT_END = 8924;
 const CALLBACK_PATH = '/oauth/callback';
-const CLIENT_NAME = 'WS Workspace';
+const CLIENT_NAME = 'Craft Agent';
 
 // Generate PKCE code verifier and challenge
 function generatePKCE(): { verifier: string; challenge: string } {
@@ -263,7 +263,7 @@ export class CraftOAuth {
       }
     } else {
       // Use a default client ID for public clients
-      clientId = 'ws-workspace';
+      clientId = 'craft-agent';
       this.callbacks.onStatus(`Using default client ID: ${clientId}`);
     }
 

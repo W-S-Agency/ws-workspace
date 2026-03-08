@@ -1,6 +1,6 @@
-# Contributing to WS Workspace
+# Contributing to Craft Agents
 
-Thank you for your interest in contributing to WS Workspace! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Craft Agents! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 
@@ -14,8 +14,8 @@ Thank you for your interest in contributing to WS Workspace! This document provi
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/W-S-Agency/ws-workspace.git
-   cd ws-workspace
+   git clone https://github.com/lukilabs/craft-agents-oss.git
+   cd craft-agents-oss
    ```
 
 2. Install dependencies:
@@ -93,7 +93,7 @@ How you tested these changes
 ## Project Structure
 
 ```
-ws-workspace/
+craft-agents/
 ├── apps/
 │   ├── electron/    # Desktop GUI (primary interface)
 │   └── tui/         # Terminal CLI (deprecated)

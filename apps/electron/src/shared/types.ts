@@ -1,5 +1,5 @@
 // Types shared between main and renderer processes
-// Core types are re-exported from @ws-workspace/core
+// Core types are re-exported from @craft-agent/core
 
 // Import and re-export core types
 import type {
@@ -12,17 +12,17 @@ import type {
   StoredAttachment as CoreStoredAttachment,
   ContentBadge,
   ToolDisplayMeta,
-} from '@ws-workspace/core/types';
+} from '@craft-agent/core/types';
 
 // Import mode types from dedicated subpath export (avoids pulling in SDK)
-import type { PermissionMode } from '@ws-workspace/shared/agent/modes';
+import type { PermissionMode } from '@craft-agent/shared/agent/modes';
 export type { PermissionMode };
-export { PERMISSION_MODE_CONFIG } from '@ws-workspace/shared/agent/modes';
+export { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes';
 
 // Import thinking level types
-import type { ThinkingLevel } from '@ws-workspace/shared/agent/thinking-levels';
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
 export type { ThinkingLevel };
-export { THINKING_LEVELS, DEFAULT_THINKING_LEVEL } from '@ws-workspace/shared/agent/thinking-levels';
+export { THINKING_LEVELS, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels';
 
 export type {
   CoreMessage as Message,
@@ -38,27 +38,25 @@ export type {
 
 // Import and re-export auth types for onboarding
 // Use types-only subpaths to avoid pulling in Node.js dependencies
-import type { AuthState, SetupNeeds } from '@ws-workspace/shared/auth/types';
-import type { AuthType } from '@ws-workspace/shared/config/types';
+import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types';
+import type { AuthType } from '@craft-agent/shared/config/types';
 export type { AuthState, SetupNeeds, AuthType };
 
 // Import and re-export credential health types
-import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType } from '@ws-workspace/shared/credentials/types';
+import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType } from '@craft-agent/shared/credentials/types';
 export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType };
 
 // Import source types for session source selection
-import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@ws-workspace/shared/sources/types';
+import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
 export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
 
 // Import skill types
-import type { LoadedSkill, SkillMetadata } from '@ws-workspace/shared/skills/types';
+import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
 export type { LoadedSkill, SkillMetadata };
 
-// Import session types from shared (for SessionFamily - different from core SessionMetadata)
-import type { SessionMetadata as SharedSessionMetadata } from '@ws-workspace/shared/sessions/types';
 
 // Import LLM connection types
-import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType } from '@ws-workspace/shared/config';
+import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType };
 
 /**
@@ -129,12 +127,12 @@ export interface FileSearchResult {
 }
 
 // Import auth request types for unified auth flow
-import type { AuthRequest as SharedAuthRequest, CredentialInputMode as SharedCredentialInputMode, CredentialAuthRequest as SharedCredentialAuthRequest } from '@ws-workspace/shared/agent';
+import type { AuthRequest as SharedAuthRequest, CredentialInputMode as SharedCredentialInputMode, CredentialAuthRequest as SharedCredentialAuthRequest } from '@craft-agent/shared/agent';
 export type { SharedAuthRequest as AuthRequest };
 export type { SharedCredentialInputMode as CredentialInputMode };
 // CredentialRequest is used by UI components for displaying credential input
 export type CredentialRequest = SharedCredentialAuthRequest;
-export { generateMessageId } from '@ws-workspace/core/types';
+export { generateMessageId } from '@craft-agent/core/types';
 
 /**
  * OAuth result from main process
@@ -195,6 +193,15 @@ export interface SessionSearchResult {
   matches: SessionSearchMatch[]
 }
 
+export interface UnreadSummary {
+  /** Total unread sessions across all workspaces (hidden/archived excluded) */
+  totalUnreadSessions: number
+  /** Unread session count by workspace ID */
+  byWorkspace: Record<string, number>
+  /** Convenience boolean map for workspace selector indicators */
+  hasUnreadByWorkspace: Record<string, boolean>
+}
+
 /**
  * Result of sharing or revoking a session
  */
@@ -215,8 +222,8 @@ export interface RefreshTitleResult {
 
 
 // Re-export permission types from core, extended with sessionId for multi-session context
-export type { PermissionRequest as BasePermissionRequest } from '@ws-workspace/core/types';
-import type { PermissionRequest as BasePermissionRequest } from '@ws-workspace/core/types';
+export type { PermissionRequest as BasePermissionRequest } from '@craft-agent/core/types';
+import type { PermissionRequest as BasePermissionRequest } from '@craft-agent/core/types';
 
 /**
  * Permission request with session context (for multi-session Electron app)
@@ -225,11 +232,19 @@ export interface PermissionRequest extends BasePermissionRequest {
   sessionId: string
 }
 
+/**
+ * Optional metadata for permission responses.
+ * Used by admin approvals for time-scoped remember windows.
+ */
+export interface PermissionResponseOptions {
+  rememberForMinutes?: number
+}
+
 // ============================================
 // Credential Input Types (Secure Auth UI)
 // ============================================
 
-// CredentialInputMode is imported from @ws-workspace/shared/agent above
+// CredentialInputMode is imported from @craft-agent/shared/agent above
 
 /**
  * Credential response from user (for credential auth requests)
@@ -306,7 +321,7 @@ export interface FileAttachment {
 }
 
 // Import types needed for Session interface
-import type { Message } from '@ws-workspace/core/types';
+import type { Message } from '@craft-agent/core/types';
 
 /**
  * Electron-specific Session type (includes runtime state)
@@ -410,22 +425,8 @@ export interface Session {
   isArchived?: boolean
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number
-  // Sub-session hierarchy (1 level max)
-  /** Parent session ID (if this is a sub-session). Null/undefined = root session. */
-  parentSessionId?: string
-  /** Explicit sibling order (lazy - only populated when user reorders). */
-  siblingOrder?: number
-}
-
-/**
- * A project entry from workspace projects.json.
- * Used by the Project Picker button to create sessions with a preset working directory.
- */
-export interface Project {
-  name: string
-  path: string
-  category?: string
-  labels?: string[]
+  /** Whether the backend supports session branching */
+  supportsBranching?: boolean
 }
 
 /**
@@ -460,14 +461,27 @@ export interface CreateSessionOptions {
   isFlagged?: boolean
   /** Per-session source selection (source slugs) */
   enabledSourceSlugs?: string[]
+  /** Message ID to branch from (copies conversation up to and including this message) */
+  branchFromMessageId?: string
+  /** Session ID to branch from (source session for message copying) */
+  branchFromSessionId?: string
+}
+
+export interface PermissionModeState {
+  permissionMode: PermissionMode
+  previousPermissionMode?: PermissionMode
+  transitionDisplay?: string
+  modeVersion: number
+  changedAt: string
+  changedBy: 'user' | 'system' | 'restore' | 'automation' | 'unknown'
 }
 
 // Events sent from main to renderer
 // turnId: Correlation ID from the API's message.id, groups all events in an assistant turn
 export type SessionEvent =
   | { type: 'text_delta'; sessionId: string; delta: string; turnId?: string }
-  | { type: 'text_complete'; sessionId: string; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; timestamp?: number }
-  | { type: 'tool_start'; sessionId: string; toolName: string; toolUseId: string; toolInput: Record<string, unknown>; toolIntent?: string; toolDisplayName?: string; toolDisplayMeta?: import('@ws-workspace/core').ToolDisplayMeta; turnId?: string; parentToolUseId?: string; timestamp?: number }
+  | { type: 'text_complete'; sessionId: string; text: string; isIntermediate?: boolean; turnId?: string; parentToolUseId?: string; timestamp?: number; messageId?: string }
+  | { type: 'tool_start'; sessionId: string; toolName: string; toolUseId: string; toolInput: Record<string, unknown>; toolIntent?: string; toolDisplayName?: string; toolDisplayMeta?: import('@craft-agent/core').ToolDisplayMeta; turnId?: string; parentToolUseId?: string; timestamp?: number }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; toolName: string; result: string; turnId?: string; parentToolUseId?: string; isError?: boolean; timestamp?: number }
   | { type: 'error'; sessionId: string; error: string; timestamp?: number }
   | { type: 'typed_error'; sessionId: string; error: TypedError; timestamp?: number }
@@ -483,13 +497,13 @@ export type SessionEvent =
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'credential_request'; sessionId: string; request: CredentialRequest }
   // Permission mode events
-  | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode }
+  | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode; previousPermissionMode?: PermissionMode; transitionDisplay?: string; modeVersion?: number; changedAt?: string; changedBy?: PermissionModeState['changedBy'] }
   | { type: 'plan_submitted'; sessionId: string; message: CoreMessage }
   // Source events
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
   | { type: 'labels_changed'; sessionId: string; labels: string[] }
   // LLM connection events
-  | { type: 'connection_changed'; sessionId: string; connectionSlug: string }
+  | { type: 'connection_changed'; sessionId: string; connectionSlug: string; supportsBranching?: boolean }
   // Background task/shell events
   | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; turnId?: string }
   | { type: 'shell_backgrounded'; sessionId: string; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
@@ -506,11 +520,7 @@ export type SessionEvent =
   | { type: 'session_model_changed'; sessionId: string; model: string | null }
   | { type: 'session_status_changed'; sessionId: string; sessionStatus: SessionStatus }
   | { type: 'session_deleted'; sessionId: string }
-  // Sub-session events
-  | { type: 'session_created'; sessionId: string; parentSessionId?: string }
-  | { type: 'sessions_reordered' }
-  | { type: 'session_archived_cascade'; sessionId: string; count: number }
-  | { type: 'session_deleted_cascade'; sessionId: string; count: number }
+  | { type: 'session_created'; sessionId: string }
   | { type: 'session_shared'; sessionId: string; sharedUrl: string }
   | { type: 'session_unshared'; sessionId: string }
   // Auth request events (unified auth flow)
@@ -528,7 +538,7 @@ export interface SendMessageOptions {
   /** Skill slugs to activate for this message (from @mentions) */
   skillSlugs?: string[]
   /** Content badges for inline display (sources, skills with embedded icons) */
-  badges?: import('@ws-workspace/core').ContentBadge[]
+  badges?: import('@craft-agent/core').ContentBadge[]
   /** Frontend's optimistic message ID for reliable event matching */
   optimisticMessageId?: string
 }
@@ -570,21 +580,6 @@ export type SessionCommand =
   | { type: 'setPendingPlanExecution'; planPath: string }
   | { type: 'markCompactionComplete' }
   | { type: 'clearPendingPlanExecution' }
-  // Sub-session hierarchy
-  | { type: 'getSessionFamily' }
-  | { type: 'updateSiblingOrder'; orderedSessionIds: string[] }
-  | { type: 'archiveCascade' }
-  | { type: 'deleteCascade' }
-
-/**
- * Session family information (parent + siblings)
- * Uses SharedSessionMetadata from @ws-workspace/shared (not core SessionMetadata)
- */
-export interface SessionFamily {
-  parent: SharedSessionMetadata
-  siblings: SharedSessionMetadata[]
-  self: SharedSessionMetadata
-}
 
 /**
  * Parameters for opening a new chat session
@@ -600,8 +595,10 @@ export interface NewChatActionParams {
 export const IPC_CHANNELS = {
   // Session management
   GET_SESSIONS: 'sessions:get',
+  GET_UNREAD_SUMMARY: 'sessions:getUnreadSummary',
+  MARK_ALL_SESSIONS_READ: 'sessions:markAllRead',
+  SESSIONS_UNREAD_SUMMARY_CHANGED: 'sessions:unreadSummaryChanged',  // Broadcast: UnreadSummary
   CREATE_SESSION: 'sessions:create',
-  CREATE_SUB_SESSION: 'sessions:createSubSession',
   DELETE_SESSION: 'sessions:delete',
   GET_SESSION_MESSAGES: 'sessions:getMessages',
   SEND_MESSAGE: 'sessions:sendMessage',
@@ -616,12 +613,13 @@ export const IPC_CHANNELS = {
 
   // Pending plan execution (for reload recovery)
   GET_PENDING_PLAN_EXECUTION: 'sessions:getPendingPlanExecution',
+  // Authoritative permission mode diagnostics for renderer reconciliation
+  GET_SESSION_PERMISSION_MODE_STATE: 'sessions:getPermissionModeState',
 
   // Workspace management
   GET_WORKSPACES: 'workspaces:get',
   CREATE_WORKSPACE: 'workspaces:create',
   CHECK_WORKSPACE_SLUG: 'workspaces:checkSlug',
-  GET_PROJECTS: 'workspaces:getProjects',
 
   // Window management
   GET_WINDOW_WORKSPACE: 'window:getWorkspace',
@@ -633,6 +631,7 @@ export const IPC_CHANNELS = {
   // Close request events (main → renderer, for intercepting X button / Cmd+W)
   WINDOW_CLOSE_REQUESTED: 'window:closeRequested',
   WINDOW_CONFIRM_CLOSE: 'window:confirmClose',
+  WINDOW_CANCEL_CLOSE: 'window:cancelClose',
   // Traffic light visibility (macOS only - hide when fullscreen overlays are open)
   WINDOW_SET_TRAFFIC_LIGHTS: 'window:setTrafficLights',
 
@@ -776,7 +775,7 @@ export const IPC_CHANNELS = {
   SOURCES_GET_PERMISSIONS: 'sources:getPermissions',
   // Workspace permissions config (for Explore mode)
   WORKSPACE_GET_PERMISSIONS: 'workspace:getPermissions',
-  // Default permissions from ~/.ws-workspace/permissions/default.json
+  // Default permissions from ~/.craft-agent/permissions/default.json
   DEFAULT_PERMISSIONS_GET: 'permissions:getDefaults',
   // Broadcast when default permissions change (file watcher)
   DEFAULT_PERMISSIONS_CHANGED: 'permissions:defaultsChanged',
@@ -864,10 +863,10 @@ export const IPC_CHANNELS = {
   APPEARANCE_GET_RICH_TOOL_DESCRIPTIONS: 'appearance:getRichToolDescriptions',
   APPEARANCE_SET_RICH_TOOL_DESCRIPTIONS: 'appearance:setRichToolDescriptions',
 
-  BADGE_UPDATE: 'badge:update',
-  BADGE_CLEAR: 'badge:clear',
+  BADGE_REFRESH: 'badge:refresh',
   BADGE_SET_ICON: 'badge:setIcon',
   BADGE_DRAW: 'badge:draw',  // Broadcast: { count: number, iconDataUrl: string }
+  BADGE_DRAW_WINDOWS: 'badge:draw-windows',  // Broadcast: { count: number }
   WINDOW_FOCUS_STATE: 'window:focusState',  // Broadcast: boolean (isFocused)
   WINDOW_GET_FOCUS_STATE: 'window:getFocusState',
 
@@ -882,6 +881,29 @@ export const IPC_CHANNELS = {
   GITBASH_CHECK: 'gitbash:check',
   GITBASH_BROWSE: 'gitbash:browse',
   GITBASH_SET_PATH: 'gitbash:setPath',
+
+  // Browser pane management
+  BROWSER_PANE_CREATE: 'browser-pane:create',
+  BROWSER_PANE_DESTROY: 'browser-pane:destroy',
+  BROWSER_PANE_LIST: 'browser-pane:list',
+  BROWSER_PANE_NAVIGATE: 'browser-pane:navigate',
+  BROWSER_PANE_GO_BACK: 'browser-pane:go-back',
+  BROWSER_PANE_GO_FORWARD: 'browser-pane:go-forward',
+  BROWSER_PANE_RELOAD: 'browser-pane:reload',
+  BROWSER_PANE_STOP: 'browser-pane:stop',
+  BROWSER_PANE_FOCUS: 'browser-pane:focus',
+  BROWSER_PANE_SNAPSHOT: 'browser-pane:snapshot',
+  BROWSER_PANE_CLICK: 'browser-pane:click',
+  BROWSER_PANE_FILL: 'browser-pane:fill',
+  BROWSER_PANE_SELECT: 'browser-pane:select',
+  BROWSER_PANE_SCREENSHOT: 'browser-pane:screenshot',
+  BROWSER_PANE_EVALUATE: 'browser-pane:evaluate',
+  BROWSER_PANE_SCROLL: 'browser-pane:scroll',
+  BROWSER_EMPTY_STATE_LAUNCH: 'browser-empty-state:launch',
+  // Browser pane events (main → renderer)
+  BROWSER_PANE_STATE_CHANGED: 'browser-pane:state-changed',
+  BROWSER_PANE_REMOVED: 'browser-pane:removed',
+  BROWSER_PANE_INTERACTED: 'browser-pane:interacted',
 
   // Menu actions (renderer → main for window/app control)
   MENU_QUIT: 'menu:quit',
@@ -898,19 +920,18 @@ export const IPC_CHANNELS = {
   MENU_PASTE: 'menu:paste',
   MENU_SELECT_ALL: 'menu:selectAll',
 
-  // Agency repos (skills library + agency memory)
-  AGENCY_REPO_STATUS: 'agency:repoStatus',
-  AGENCY_REPO_IMPORT: 'agency:repoImport',
-  AGENCY_REPO_UPDATE: 'agency:repoUpdate',
-
-  // Voice Input
-  VOICE_INPUT_TRANSCRIBE: 'voiceInput:transcribe',
-  VOICE_INPUT_HOTKEY_TRIGGERED: 'voiceInput:hotkeyTriggered',
-  VOICE_INPUT_COPY_TO_CLIPBOARD: 'voiceInput:copyToClipboard',
+  // Automations (manual trigger + state management)
+  TEST_AUTOMATION: 'automations:test',
+  AUTOMATIONS_SET_ENABLED: 'automations:setEnabled',
+  AUTOMATIONS_DUPLICATE: 'automations:duplicate',
+  AUTOMATIONS_DELETE: 'automations:delete',
+  AUTOMATIONS_GET_HISTORY: 'automations:getHistory',
+  AUTOMATIONS_GET_LAST_EXECUTED: 'automations:getLastExecuted',
+  AUTOMATIONS_CHANGED: 'automations:changed',  // Broadcast event
 } as const
 
 // Re-import types for ElectronAPI
-import type { Workspace, SessionMetadata, StoredAttachment as StoredAttachmentType } from '@ws-workspace/core/types';
+import type { Workspace, SessionMetadata, StoredAttachment as StoredAttachmentType } from '@craft-agent/core/types';
 
 /** Tool icon mapping entry from tool-icons.json (with icon resolved to data URL) */
 export interface ToolIconMapping {
@@ -921,40 +942,56 @@ export interface ToolIconMapping {
   commands: string[]
 }
 
-/** Status of an agency shared repo (skills-library or agency-memory) */
-export interface AgencyRepoStatus {
-  imported: boolean
-  path: string | null
-  lastUpdated: string | null
-  error?: string
+// Automation testing types (manual trigger from UI)
+export interface TestAutomationPayload {
+  workspaceId: string
+  /** Matcher ID for writing history entries */
+  automationId?: string
+  actions: Array<{ type: 'prompt'; prompt: string; llmConnection?: string; model?: string }>
+  permissionMode?: 'safe' | 'ask' | 'allow-all'
+  labels?: string[]
+}
+
+export interface TestAutomationActionResult {
+  type: 'prompt'
+  success: boolean
+  stderr?: string
+  sessionId?: string
+  duration: number
+}
+
+export interface TestAutomationResult {
+  actions: TestAutomationActionResult[]
 }
 
 // Type-safe IPC API exposed to renderer
 export interface ElectronAPI {
   // Session management
   getSessions(): Promise<Session[]>
+  getUnreadSummary(): Promise<UnreadSummary>
+  markAllSessionsRead(workspaceId: string): Promise<void>
   getSessionMessages(sessionId: string): Promise<Session | null>
   createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
-  createSubSession(workspaceId: string, parentSessionId: string, options?: CreateSessionOptions): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
-  respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean): Promise<boolean>
+  respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
 
   // Consolidated session command handler
-  sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | SessionFamily | { count: number }>
+  sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | { count: number }>
 
   // Pending plan execution (for reload recovery)
   getPendingPlanExecution(sessionId: string): Promise<{ planPath: string; awaitingCompaction: boolean } | null>
+  // Permission mode reconciliation
+  getSessionPermissionModeState(sessionId: string): Promise<PermissionModeState | null>
 
   // Workspace management
   getWorkspaces(): Promise<Workspace[]>
   createWorkspace(folderPath: string, name: string): Promise<Workspace>
   checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
-  getProjects(workspaceId: string): Promise<Project[]>
 
   // Window management
   getWindowWorkspace(): Promise<string | null>
@@ -964,6 +1001,8 @@ export interface ElectronAPI {
   switchWorkspace(workspaceId: string): Promise<void>
   closeWindow(): Promise<void>
   confirmCloseWindow(): Promise<void>
+  /** Cancel a pending close request (renderer handled it by closing a modal/panel). */
+  cancelCloseWindow(): Promise<void>
   /** Listen for close requests (X button, Cmd+W). Returns cleanup function. */
   onCloseRequested(callback: () => void): () => void
   /** Show/hide macOS traffic light buttons (for fullscreen overlays) */
@@ -971,6 +1010,7 @@ export interface ElectronAPI {
 
   // Event listeners
   onSessionEvent(callback: (event: SessionEvent) => void): () => void
+  onUnreadSummaryChanged(callback: (summary: UnreadSummary) => void): () => void
 
   // File operations
   readFile(path: string): Promise<string>
@@ -1102,16 +1142,16 @@ export interface ElectronAPI {
   deleteSource(workspaceId: string, sourceSlug: string): Promise<void>
   startSourceOAuth(workspaceId: string, sourceSlug: string): Promise<{ success: boolean; error?: string; accessToken?: string }>
   saveSourceCredentials(workspaceId: string, sourceSlug: string, credential: string): Promise<void>
-  getSourcePermissionsConfig(workspaceId: string, sourceSlug: string): Promise<import('@ws-workspace/shared/agent').PermissionsConfigFile | null>
-  getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@ws-workspace/shared/agent').PermissionsConfigFile | null>
-  getDefaultPermissionsConfig(): Promise<{ config: import('@ws-workspace/shared/agent').PermissionsConfigFile | null; path: string }>
+  getSourcePermissionsConfig(workspaceId: string, sourceSlug: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
+  getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
+  getDefaultPermissionsConfig(): Promise<{ config: import('@craft-agent/shared/agent').PermissionsConfigFile | null; path: string }>
   getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
 
   // Session content search (full-text search via ripgrep)
   searchSessionContent(workspaceId: string, query: string, searchId?: string): Promise<SessionSearchResult[]>
 
   // Sources change listener (live updates when sources are added/removed)
-  onSourcesChanged(callback: (sources: LoadedSource[]) => void): () => void
+  onSourcesChanged(callback: (workspaceId: string, sources: LoadedSource[]) => void): () => void
 
   // Default permissions change listener (live updates when default.json changes)
   onDefaultPermissionsChanged(callback: () => void): () => void
@@ -1124,17 +1164,17 @@ export interface ElectronAPI {
   openSkillInFinder(workspaceId: string, skillSlug: string): Promise<void>
 
   // Skills change listener (live updates when skills are added/removed/modified)
-  onSkillsChanged(callback: (skills: LoadedSkill[]) => void): () => void
+  onSkillsChanged(callback: (workspaceId: string, skills: LoadedSkill[]) => void): () => void
 
   // Statuses (workspace-scoped)
-  listStatuses(workspaceId: string): Promise<import('@ws-workspace/shared/statuses').StatusConfig[]>
+  listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
   reorderStatuses(workspaceId: string, orderedIds: string[]): Promise<void>
   // Statuses change listener (live updates when statuses config or icon files change)
   onStatusesChanged(callback: (workspaceId: string) => void): () => void
 
   // Labels (workspace-scoped)
-  listLabels(workspaceId: string): Promise<import('@ws-workspace/shared/labels').LabelConfig[]>
-  createLabel(workspaceId: string, input: import('@ws-workspace/shared/labels').CreateLabelInput): Promise<import('@ws-workspace/shared/labels').LabelConfig>
+  listLabels(workspaceId: string): Promise<import('@craft-agent/shared/labels').LabelConfig[]>
+  createLabel(workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput): Promise<import('@craft-agent/shared/labels').LabelConfig>
   deleteLabel(workspaceId: string, labelId: string): Promise<{ stripped: number }>
   // Labels change listener (live updates when labels config changes)
   onLabelsChanged(callback: (workspaceId: string) => void): () => void
@@ -1143,8 +1183,8 @@ export interface ElectronAPI {
   onLlmConnectionsChanged(callback: () => void): () => void
 
   // Views (workspace-scoped, stored in views.json)
-  listViews(workspaceId: string): Promise<import('@ws-workspace/shared/views').ViewConfig[]>
-  saveViews(workspaceId: string, views: import('@ws-workspace/shared/views').ViewConfig[]): Promise<void>
+  listViews(workspaceId: string): Promise<import('@craft-agent/shared/views').ViewConfig[]>
+  saveViews(workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]): Promise<void>
 
   // Generic workspace image loading/saving (returns data URL for images, raw string for SVG)
   readWorkspaceImage(workspaceId: string, relativePath: string): Promise<string>
@@ -1192,10 +1232,10 @@ export interface ElectronAPI {
   getRichToolDescriptions(): Promise<boolean>
   setRichToolDescriptions(enabled: boolean): Promise<void>
 
-  updateBadgeCount(count: number): Promise<void>
-  clearBadgeCount(): Promise<void>
+  refreshBadge(): Promise<void>
   setDockIconWithBadge(dataUrl: string): Promise<void>
   onBadgeDraw(callback: (data: { count: number; iconDataUrl: string }) => void): () => void
+  onBadgeDrawWindows(callback: (data: { count: number }) => void): () => void
   getWindowFocusState(): Promise<boolean>
   onWindowFocusChange(callback: (isFocused: boolean) => void): () => void
   onNotificationNavigate(callback: (data: { workspaceId: string; sessionId: string }) => void): () => void
@@ -1210,11 +1250,6 @@ export interface ElectronAPI {
 
   // Git operations
   getGitBranch(dirPath: string): Promise<string | null>
-
-  // Agency repos
-  getAgencyRepoStatus(repoId: string): Promise<AgencyRepoStatus>
-  importAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
-  updateAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
 
   // Git Bash (Windows)
   checkGitBash(): Promise<GitBashStatus>
@@ -1237,6 +1272,23 @@ export interface ElectronAPI {
   menuPaste(): Promise<void>
   menuSelectAll(): Promise<void>
 
+  // Browser pane management
+  browserPane: {
+    create(input?: string | BrowserPaneCreateOptions): Promise<string>
+    destroy(id: string): Promise<void>
+    list(): Promise<BrowserInstanceInfo[]>
+    navigate(id: string, url: string): Promise<{ url: string; title: string }>
+    goBack(id: string): Promise<void>
+    goForward(id: string): Promise<void>
+    reload(id: string): Promise<void>
+    stop(id: string): Promise<void>
+    focus(id: string): Promise<void>
+    emptyStateLaunch(payload: BrowserEmptyStateLaunchPayload): Promise<BrowserEmptyStateLaunchResult>
+    onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
+    onRemoved(callback: (id: string) => void): () => void
+    onInteracted(callback: (id: string) => void): () => void
+  }
+
   // LLM Connections (provider configurations)
   listLlmConnections(): Promise<LlmConnection[]>
   listLlmConnectionsWithStatus(): Promise<LlmConnectionWithStatus[]>
@@ -1248,10 +1300,18 @@ export interface ElectronAPI {
   setDefaultLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
 
-  // Voice Input
-  voiceInputTranscribe(audioData: Uint8Array, mimeType: string, language?: string): Promise<{ text: string; duration?: number }>
-  voiceInputCopyToClipboard(text: string): Promise<void>
-  onVoiceInputHotkeyTriggered(callback: () => void): () => void
+  // Automation testing (manual trigger)
+  testAutomation(payload: TestAutomationPayload): Promise<TestAutomationResult>
+
+  // Automation state management
+  setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
+  duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
+  deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
+  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }>>
+  getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
+
+  // Automations change listener (live updates when automations.json changes on disk)
+  onAutomationsChanged(callback: (workspaceId: string) => void): () => void
 }
 
 /**
@@ -1326,7 +1386,6 @@ export interface DeepLinkNavigation {
  * Defines the content displayed in the right sidebar
  */
 export type RightSidebarPanel =
-  | { type: 'sessionMetadata' }
   | { type: 'files'; path?: string }
   | { type: 'history' }
   | { type: 'none' }
@@ -1374,6 +1433,14 @@ export interface SourceFilter {
 }
 
 /**
+ * Automation type filter for automations navigation (e.g., show only Scheduled, Event-based, or Agentic automations)
+ */
+export interface AutomationFilter {
+  kind: 'type'
+  automationType: 'scheduled' | 'event' | 'agentic'
+}
+
+/**
  * Sources navigation state - shows SourcesListPanel in navigator
  */
 export interface SourcesNavigationState {
@@ -1398,12 +1465,72 @@ export interface SettingsNavigationState {
 }
 
 /**
+ * Browser pane creation options
+ */
+export interface BrowserPaneCreateOptions {
+  id?: string
+  show?: boolean
+  bindToSessionId?: string
+}
+
+/**
+ * Empty-state launch request from the browser empty-state renderer.
+ */
+export interface BrowserEmptyStateLaunchPayload {
+  route: string
+  token?: string
+}
+
+/**
+ * Result of browser empty-state launch handling.
+ */
+export interface BrowserEmptyStateLaunchResult {
+  ok: boolean
+  handled: boolean
+  reason?: string
+}
+
+/**
+ * Browser pane instance info (synced from main process)
+ */
+export interface BrowserInstanceInfo {
+  id: string
+  url: string
+  title: string
+  favicon: string | null
+  isLoading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  boundSessionId: string | null
+  ownerType: 'session' | 'manual'
+  ownerSessionId: string | null
+  isVisible: boolean
+  /** Whether agent control overlay is currently active for this window */
+  agentControlActive: boolean
+  /** Website theme color from <meta name="theme-color"> (null if not set) */
+  themeColor: string | null
+}
+
+/**
  * Skills navigation state - shows SkillsListPanel in navigator
  */
 export interface SkillsNavigationState {
   navigator: 'skills'
   /** Selected skill details or null for empty state */
   details: { type: 'skill'; skillSlug: string } | null
+  /** Optional right sidebar panel state */
+  rightSidebar?: RightSidebarPanel
+}
+
+/**
+ * Automations navigation state - shows AutomationsListPanel in navigator
+ */
+export interface AutomationsNavigationState {
+  navigator: 'automations'
+  /** Optional filter for automation type */
+  filter?: AutomationFilter
+  /** Selected automation details, or null for empty state */
+  details: { type: 'automation'; automationId: string } | null
   /** Optional right sidebar panel state */
   rightSidebar?: RightSidebarPanel
 }
@@ -1421,6 +1548,7 @@ export type NavigationState =
   | SourcesNavigationState
   | SettingsNavigationState
   | SkillsNavigationState
+  | AutomationsNavigationState
 
 /**
  * Type guard to check if state is sessions navigation
@@ -1451,6 +1579,13 @@ export const isSkillsNavigation = (
 ): state is SkillsNavigationState => state.navigator === 'skills'
 
 /**
+ * Type guard to check if state is automations navigation
+ */
+export const isAutomationsNavigation = (
+  state: NavigationState
+): state is AutomationsNavigationState => state.navigator === 'automations'
+
+/**
  * Default navigation state - allSessions with no selection
  */
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
@@ -1474,6 +1609,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `skills/skill/${state.details.skillSlug}`
     }
     return 'skills'
+  }
+  if (state.navigator === 'automations') {
+    if (state.details?.type === 'automation') {
+      return `automations/automation/${state.details.automationId}`
+    }
+    return 'automations'
   }
   if (state.navigator === 'settings') {
     return `settings:${state.subpage}`
@@ -1514,6 +1655,16 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
       return { navigator: 'skills', details: { type: 'skill', skillSlug } }
     }
     return { navigator: 'skills', details: null }
+  }
+
+  // Handle automations
+  if (key === 'automations') return { navigator: 'automations', details: null }
+  if (key.startsWith('automations/automation/')) {
+    const automationId = key.slice(22)
+    if (automationId) {
+      return { navigator: 'automations', details: { type: 'automation', automationId } }
+    }
+    return { navigator: 'automations', details: null }
   }
 
   // Handle settings

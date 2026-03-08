@@ -10,7 +10,7 @@ let cachedWindowManager: WindowManager | null = null
 
 /**
  * Creates and sets the application menu for macOS.
- * Includes only relevant items for the WS Workspace app.
+ * Includes only relevant items for the Craft Agents app.
  *
  * Call rebuildMenu() when update state changes to refresh the menu.
  */
@@ -23,7 +23,7 @@ export function createApplicationMenu(windowManager: WindowManager): void {
  * Rebuilds the application menu with current update state.
  * Call this when update availability changes.
  *
- * On Windows/Linux: Menu is hidden - all functionality is in the logo menu.
+ * On Windows/Linux: Menu is hidden - all functionality is in the Craft logo menu.
  * On macOS: Native menu is required by Apple guidelines, so we keep it synced.
  */
 export async function rebuildMenu(): Promise<void> {
@@ -62,22 +62,23 @@ export async function rebuildMenu(): Promise<void> {
   const template: Electron.MenuItemConstructorOptions[] = [
     // App menu (macOS only)
     ...(isMac ? [{
-      label: 'WS Workspace',
+      label: 'Craft Agents',
       submenu: [
-        { role: 'about' as const, label: 'About WS Workspace' },
+        { role: 'about' as const, label: 'About Craft Agents' },
         updateMenuItem,
         { type: 'separator' as const },
         {
           label: 'Settings...',
           accelerator: 'CmdOrCtrl+,',
+          registerAccelerator: false,  // Action registry handles the keyboard shortcut
           click: () => sendToRenderer(IPC_CHANNELS.MENU_OPEN_SETTINGS)
         },
         { type: 'separator' as const },
-        { role: 'hide' as const, label: 'Hide WS Workspace' },
+        { role: 'hide' as const, label: 'Hide Craft Agents' },
         { role: 'hideOthers' as const },
         { role: 'unhide' as const },
         { type: 'separator' as const },
-        { role: 'quit' as const, label: 'Quit WS Workspace' }
+        { role: 'quit' as const, label: 'Quit Craft Agents' }
       ]
     }] : []),
 
@@ -88,11 +89,13 @@ export async function rebuildMenu(): Promise<void> {
         {
           label: 'New Chat',
           accelerator: 'CmdOrCtrl+N',
+          registerAccelerator: false,  // Action registry handles the keyboard shortcut
           click: () => sendToRenderer(IPC_CHANNELS.MENU_NEW_CHAT)
         },
         {
           label: 'New Window',
           accelerator: 'CmdOrCtrl+Shift+N',
+          registerAccelerator: false,  // Action registry handles the keyboard shortcut
           click: () => {
             const focused = BrowserWindow.getFocusedWindow()
             if (focused) {
@@ -122,8 +125,34 @@ export async function rebuildMenu(): Promise<void> {
         // Dev tools only in development
         ...(!app.isPackaged ? [
           { type: 'separator' as const },
-          { role: 'reload' as const },
-          { role: 'forceReload' as const },
+          {
+            label: 'Reload',
+            accelerator: 'CmdOrCtrl+R',
+            click: (_menuItem: Electron.MenuItem, window: Electron.BaseWindow | undefined) => {
+              const browserWindow = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow()
+              if (!browserWindow) return
+              const views = browserWindow.getBrowserViews()
+              if (views.length > 0) {
+                views[0].webContents.reload()
+              } else {
+                browserWindow.webContents.reload()
+              }
+            }
+          },
+          {
+            label: 'Force Reload',
+            accelerator: 'CmdOrCtrl+Shift+R',
+            click: (_menuItem: Electron.MenuItem, window: Electron.BaseWindow | undefined) => {
+              const browserWindow = window instanceof BrowserWindow ? window : BrowserWindow.getFocusedWindow()
+              if (!browserWindow) return
+              const views = browserWindow.getBrowserViews()
+              if (views.length > 0) {
+                views[0].webContents.reloadIgnoringCache()
+              } else {
+                browserWindow.webContents.reloadIgnoringCache()
+              }
+            }
+          },
           { type: 'separator' as const },
           { role: 'toggleDevTools' as const }
         ] : [])
@@ -173,7 +202,7 @@ export async function rebuildMenu(): Promise<void> {
             await dialog.showMessageBox({
               type: 'info',
               message: 'Reset to Defaults',
-              detail: 'To reset WS Workspace to defaults, quit the app and run:\n\nbun run fresh-start\n\nThis will delete all configuration, credentials, workspaces, and sessions.',
+              detail: 'To reset Craft Agent to defaults, quit the app and run:\n\nbun run fresh-start\n\nThis will delete all configuration, credentials, workspaces, and sessions.',
               buttons: ['OK']
             })
           }
@@ -192,6 +221,7 @@ export async function rebuildMenu(): Promise<void> {
         {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
+          registerAccelerator: false,  // Action registry handles the keyboard shortcut
           click: () => sendToRenderer(IPC_CHANNELS.MENU_KEYBOARD_SHORTCUTS)
         }
       ]
@@ -229,6 +259,7 @@ function toElectronMenuItem(item: MenuItem): Electron.MenuItemConstructorOptions
     return {
       label: item.label,
       accelerator: item.shortcut,
+      registerAccelerator: false,  // Action registry handles the keyboard shortcut
       click: () => sendToRenderer(item.ipcChannel),
     }
   }
