@@ -1,6 +1,6 @@
 import type { ComponentEntry } from './types'
 import { type ReactNode, useState, useCallback, useMemo, useRef } from 'react'
-import { ActionCard } from '@ws-workspace/ui'
+import { ActionCard } from '@craft-agent/ui'
 import {
   flexRender,
   getCoreRowModel,
@@ -14,9 +14,11 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// Configure pdf.js worker
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
+// Configure pdf.js worker - CDN workaround for Bun + Vite compatibility
+// TODO: Fix pdf.js worker import for Bun + Vite + workspace packages
+// import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
 
 // Sample assets
 import samplePdfUrl from '@/assets/samples/sample-invoice.pdf?url'

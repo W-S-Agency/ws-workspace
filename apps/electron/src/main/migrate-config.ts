@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, cpSync, writeFileSync, statSync, readdirSync } f
 import { join } from 'path'
 import { homedir } from 'os'
 import { mainLog } from './logger'
-import { CONFIG_DIR } from '@ws-workspace/shared/config/paths'
+import { CONFIG_DIR } from '@craft-agent/shared/config/paths'
 
 const LEGACY_DIR = join(homedir(), '.craft-agent')
 

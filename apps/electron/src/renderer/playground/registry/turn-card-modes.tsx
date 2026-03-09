@@ -6,7 +6,7 @@ import {
   UserMessageBubble,
   type ActivityItem,
   type ResponseContent,
-} from '@ws-workspace/ui'
+} from '@craft-agent/ui'
 
 // Import sample workflows
 import {

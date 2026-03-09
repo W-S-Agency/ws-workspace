@@ -16,7 +16,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { AgentEvent } from '@ws-workspace/core/types';
+import type { AgentEvent } from '@craft-agent/core/types';
 import type { FileAttachment } from '../utils/files.ts';
 import type { ThinkingLevel } from './thinking-levels.ts';
 import { DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
@@ -25,6 +25,7 @@ import type { LoadedSource } from '../sources/types.ts';
 import { buildCallLlmRequest, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 import { getLlmConnections, getDefaultLlmConnection } from '../config/storage.ts';
 import { loadAllSources } from '../sources/storage.ts';
+import type { ApiServerConfig } from '../mcp/mcp-pool.ts';
 
 import type {
   AgentBackend,
@@ -52,15 +53,15 @@ import { ConfigWatcherManager, type ConfigWatcherManagerCallbacks } from './core
 import { UsageTracker, type UsageUpdate } from './core/usage-tracker.ts';
 import { PrerequisiteManager } from './core/prerequisite-manager.ts';
 
-// Hook system for agent events
-import type { HookSystem } from '../hooks-simple/hook-system.ts';
-import type { AgentEvent as HookAgentEvent, SdkHookInput } from '../hooks-simple/types.ts';
+// Automation system for agent events
+import type { AutomationSystem } from '../automations/automation-system.ts';
+import type { AgentEvent as AutomationAgentEvent, SdkAutomationInput } from '../automations/types.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sessions/storage.ts';
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
 
 // Skill extraction for Codex/Copilot backends (Claude uses native SDK Skill tool)
-import { parseMentions, stripAllMentions } from '../mentions/index.ts';
+import { parseMentions, stripAllMentions, resolveFileMentions } from '../mentions/index.ts';
 import { loadAllSkills } from '../skills/storage.ts';
 
 // ============================================================
@@ -160,6 +161,10 @@ export abstract class BaseAgent implements AgentBackend {
   // ============================================================
   protected abstract backendName: string;
 
+  /** Whether this backend supports session branching. Subclasses can override. */
+  protected _supportsBranching = true;
+  get supportsBranching(): boolean { return this._supportsBranching; }
+
   // ============================================================
   // Configuration (protected for subclass access)
   // ============================================================
@@ -184,7 +189,7 @@ export abstract class BaseAgent implements AgentBackend {
   protected configWatcherManager: ConfigWatcherManager | null = null;
   protected usageTracker: UsageTracker;
   protected prerequisiteManager: PrerequisiteManager;
-  protected hookSystem?: HookSystem;
+  protected automationSystem?: AutomationSystem;
 
   // ============================================================
   // Additional State (protected for subclass access)
@@ -259,8 +264,8 @@ export abstract class BaseAgent implements AgentBackend {
       onDebug: (msg) => this.debug(msg),
     });
 
-    // HookSystem: workspace-level user hooks from hooks.json
-    this.hookSystem = config.hookSystem;
+    // AutomationSystem: workspace-level automations from automations.json
+    this.automationSystem = config.automationSystem;
   }
 
   // ============================================================
@@ -293,7 +298,7 @@ export abstract class BaseAgent implements AgentBackend {
 
     this.configWatcherManager = new ConfigWatcherManager(
       {
-        workspaceRootPath: this.workingDirectory,
+        workspaceRootPath: this.config.workspace.rootPath,
         isHeadless: this.config.isHeadless,
         onDebug: (msg) => this.debug(msg),
       },
@@ -326,18 +331,18 @@ export abstract class BaseAgent implements AgentBackend {
   }
 
   /**
-   * Fire a hook agent event (from hooks.json) via HookSystem.
-   * Catches all errors — hooks must never break the agent flow.
+   * Fire an automation agent event (from automations.json) via AutomationSystem.
+   * Catches all errors — automations must never break the agent flow.
    *
    * Non-Claude backends call this directly. ClaudeAgent uses SDK's buildSdkHooks() instead.
    *
-   * @param signal - Optional AbortSignal for cancelling hook execution on abort
+   * @param signal - Optional AbortSignal for cancelling automation execution on abort
    */
-  protected async emitHookEvent(event: HookAgentEvent, input: SdkHookInput, signal?: AbortSignal): Promise<void> {
+  protected async emitAutomationEvent(event: AutomationAgentEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<void> {
     try {
-      await this.hookSystem?.executeAgentEvent(event, input, signal);
+      await this.automationSystem?.executeAgentEvent(event, input, signal);
     } catch (err) {
-      this.debug(`Hook event ${event} failed: ${err}`);
+      this.debug(`Automation event ${event} failed: ${err}`);
     }
   }
 
@@ -564,9 +569,10 @@ export abstract class BaseAgent implements AgentBackend {
     );
 
     // Sync the centralized MCP client pool (if available)
+    // Both MCP sources and API sources are routed through the pool.
     if (this.config.mcpPool) {
       try {
-        await this.config.mcpPool.sync(mcpServers);
+        await this.config.mcpPool.sync(mcpServers, apiServers as Record<string, ApiServerConfig>);
       } catch (err) {
         this.debug(`Failed to sync MCP pool: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -788,6 +794,14 @@ Please continue the conversation naturally from where we left off.
     // No-op by default
   }
 
+  /**
+   * Ensure branch sessions are backend-ready before first user message.
+   * Default implementation is a no-op.
+   */
+  async ensureBranchReady(): Promise<void> {
+    // No-op by default
+  }
+
   // ============================================================
   // Cleanup (common base, subclasses extend)
   // ============================================================
@@ -869,13 +883,17 @@ Please continue the conversation naturally from where we left off.
       }
     }
 
-    // Strip all bracket mentions from the message text
-    const stripped = stripAllMentions(message).trim();
+    // Strip control mentions (skills, sources) from the message text
+    const stripped = stripAllMentions(message);
+
+    // Resolve [file:path] and [folder:path] to absolute paths
+    const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
+    const resolved = resolveFileMentions(stripped, workDir).trim();
 
     // If user sent only skill mentions with no other text, add a directive
-    const cleanMessage = (!stripped && skillPaths.size > 0)
+    const cleanMessage = (!resolved && skillPaths.size > 0)
       ? 'Follow the skill instructions from the files listed above.'
-      : stripped;
+      : resolved;
 
     this.debug(`[extractSkillPaths] Clean message: "${cleanMessage.slice(0, 100)}...", skills: ${skillPaths.size}`);
 

@@ -22,8 +22,8 @@ import WorkspaceSettingsPage from './WorkspaceSettingsPage'
 import PermissionsSettingsPage from './PermissionsSettingsPage'
 import LabelsSettingsPage from './LabelsSettingsPage'
 import ShortcutsPage from './ShortcutsPage'
-import PreferencesPage from './PreferencesPage'
 import AgencySettingsPage from './AgencySettingsPage'
+import PreferencesPage from './PreferencesPage'
 
 /**
  * Map of settings subpage IDs to their page components.
@@ -38,8 +38,8 @@ export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = 
   permissions: PermissionsSettingsPage,
   labels: LabelsSettingsPage,
   shortcuts: ShortcutsPage,
-  preferences: PreferencesPage,
   agency: AgencySettingsPage,
+  preferences: PreferencesPage,
 }
 
 /**

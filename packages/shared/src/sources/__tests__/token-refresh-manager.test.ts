@@ -9,6 +9,7 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 import { isOAuthSource, type LoadedSource, type FolderSourceConfig } from '../types.ts';
 import { TokenRefreshManager } from '../token-refresh-manager.ts';
+import { isSourceUsable } from '../storage.ts';
 import type { SourceCredentialManager } from '../credential-manager.ts';
 
 // Mock storage module to prevent disk I/O
@@ -435,8 +436,7 @@ describe('TokenRefreshManager', () => {
 
       expect(result.success).toBe(true);
       expect(result.token).toBe('new-fresh-token');
-      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- test assertion verifying raw field
-      expect(source.config.isAuthenticated).toBe(true);
+      expect(isSourceUsable(source)).toBe(true);
       expect(source.config.connectionStatus).toBe('connected');
       expect(source.config.connectionError).toBeUndefined();
       expect(mockMarkSourceAuthenticated).toHaveBeenCalledWith('/mock/workspace', 'craft-mcp');
@@ -466,8 +466,7 @@ describe('TokenRefreshManager', () => {
       const result = await manager.ensureFreshToken(source);
 
       expect(result.success).toBe(false);
-      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- test assertion verifying raw field
-      expect(source.config.isAuthenticated).toBe(false);
+      expect(isSourceUsable(source)).toBe(false);
       expect(mockMarkSourceAuthenticated).not.toHaveBeenCalled();
     });
   });
@@ -506,8 +505,7 @@ describe('TokenRefreshManager', () => {
       expect(failed.length).toBe(0);
 
       // Step 3: Verify auth state is restored
-      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- test assertion verifying raw field
-      expect(source.config.isAuthenticated).toBe(true);
+      expect(isSourceUsable(source)).toBe(true);
       expect(source.config.connectionStatus).toBe('connected');
       expect(source.config.connectionError).toBeUndefined();
       expect(mockMarkSourceAuthenticated).toHaveBeenCalledWith('/mock/workspace', 'craft-mcp');

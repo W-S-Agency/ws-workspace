@@ -3,7 +3,7 @@
  *
  * CRUD operations for workspaces.
  * Workspaces can be stored anywhere on disk via rootPath.
- * Default location: ~/.ws-workspace/workspaces/
+ * Default location: ~/.craft-agent/workspaces/
  */
 
 import {
@@ -16,19 +16,21 @@ import {
   statSync,
 } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import { atomicWriteFileSync, readJsonFileSync } from '../utils/files.ts';
 import { getDefaultStatusConfig, saveStatusConfig, ensureDefaultIconFiles } from '../statuses/storage.ts';
 import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
-import { CONFIG_DIR } from '../config/paths.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
   LoadedWorkspace,
   WorkspaceSummary,
 } from './types.ts';
+
+const CONFIG_DIR = join(homedir(), '.craft-agent');
 const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
 
 // ============================================================
@@ -36,7 +38,7 @@ const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
 // ============================================================
 
 /**
- * Get the default workspaces directory (~/.ws-workspace/workspaces/)
+ * Get the default workspaces directory (~/.craft-agent/workspaces/)
  */
 export function getDefaultWorkspacesDir(): string {
   return DEFAULT_WORKSPACES_DIR;
@@ -235,7 +237,7 @@ export function generateSlug(name: string): string {
  * E.g., "my-workspace", "my-workspace-2", "my-workspace-3", ...
  *
  * @param name - Display name to derive the slug from
- * @param baseDir - Parent directory where workspace folders live (e.g., ~/.ws-workspace/workspaces/)
+ * @param baseDir - Parent directory where workspace folders live (e.g., ~/.craft-agent/workspaces/)
  * @returns Full path to a unique, non-existing folder
  */
 export function generateUniqueWorkspacePath(name: string, baseDir: string): string {
@@ -362,7 +364,7 @@ export function renameWorkspaceFolder(rootPath: string, newName: string): boolea
 
 /**
  * Discover workspace folders in the default location that have valid config.json
- * Returns paths to valid workspaces found in ~/.ws-workspace/workspaces/
+ * Returns paths to valid workspaces found in ~/.craft-agent/workspaces/
  */
 export function discoverWorkspacesInDefaultLocation(): string[] {
   const discovered: string[] = [];

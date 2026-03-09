@@ -1,28 +1,29 @@
 import { app, ipcMain, nativeTheme, nativeImage, dialog, shell, BrowserWindow } from 'electron'
-import { readFile, readdir, stat, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
+import { appendFile, readFile, readdir, stat, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { normalize, isAbsolute, join, basename, dirname, resolve, relative, sep } from 'path'
 import { homedir, tmpdir } from 'os'
-import { CONFIG_DIR } from '@ws-workspace/shared/config/paths'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import { SessionManager } from './sessions'
 import { ipcLog, windowLog, searchLog } from './logger'
 import { WindowManager } from './window-manager'
+import type { BrowserPaneManager, BrowserScreenshotOptions } from './browser-pane-manager'
 import { registerOnboardingHandlers } from './onboarding'
-import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type SendMessageOptions, type LlmConnectionSetup } from '../shared/types'
-import { readFileAttachment, perf, validateImageForClaudeAPI, IMAGE_LIMITS } from '@ws-workspace/shared/utils'
-import { safeJsonParse } from '@ws-workspace/shared/utils/files'
-import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, loadStoredConfig, saveConfig, type Workspace, getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, type LlmConnection, type LlmConnectionWithStatus, getGitBashPath, setGitBashPath, clearGitBashPath } from '@ws-workspace/shared/config'
-import { getSessionAttachmentsPath, validateSessionId } from '@ws-workspace/shared/sessions'
-import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource } from '@ws-workspace/shared/sources'
-import { isValidThinkingLevel } from '@ws-workspace/shared/agent/thinking-levels'
+import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type SendMessageOptions, type LlmConnectionSetup, type SkillFile, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload } from '../shared/types'
+import { readFileAttachment, perf, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
+import { safeJsonParse } from '@craft-agent/shared/utils/files'
+import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, loadStoredConfig, saveConfig, type Workspace, getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, type LlmConnection, type LlmConnectionWithStatus, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
+import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
+import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource } from '@craft-agent/shared/sources'
+import { isValidThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
+import { resizeImageForAPI } from './image-utils'
 import {
   resolveSetupTestConnectionHint,
   testBackendConnection,
   validateStoredBackendConnection,
-} from '@ws-workspace/shared/agent/backend'
-import { getCredentialManager } from '@ws-workspace/shared/credentials'
+} from '@craft-agent/shared/agent/backend'
+import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { MarkItDown } from 'markitdown-js'
 import { isUsableGitBashPath, validateGitBashPath } from './git-bash'
 import { getModelRefreshService } from './model-fetchers'
@@ -134,7 +135,7 @@ async function validateFilePath(filePath: string): Promise<string> {
   return realPath
 }
 
-export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager): void {
+export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager, browserPaneManager?: BrowserPaneManager): void {
   // Get all sessions for the calling window's workspace
   // Waits for initialization to complete so sessions are never returned empty during startup
   ipcMain.handle(IPC_CHANNELS.GET_SESSIONS, async (event) => {
@@ -148,6 +149,20 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
     return sessions
+  })
+
+  // Get unread summary across all workspaces
+  ipcMain.handle(IPC_CHANNELS.GET_UNREAD_SUMMARY, async () => {
+    try {
+      await sessionManager.waitForInit()
+    } catch (error) {
+      ipcLog.error('GET_UNREAD_SUMMARY continuing after initialization failure:', error)
+    }
+    return sessionManager.getUnreadSummary()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.MARK_ALL_SESSIONS_READ, async (_event, workspaceId: string) => {
+    return sessionManager.markAllSessionsRead(workspaceId)
   })
 
   // Get a single session with messages (for lazy loading)
@@ -175,7 +190,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Check if a workspace slug already exists (for validation before creation)
   ipcMain.handle(IPC_CHANNELS.CHECK_WORKSPACE_SLUG, async (_event, slug: string) => {
-    const defaultWorkspacesDir = join(CONFIG_DIR, 'workspaces')
+    const defaultWorkspacesDir = join(homedir(), '.craft-agent', 'workspaces')
     const workspacePath = join(defaultWorkspacesDir, slug)
     const exists = existsSync(workspacePath)
     return { exists, path: workspacePath }
@@ -230,6 +245,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     windowManager.forceCloseWindow(event.sender.id)
   })
 
+  // Cancel close - renderer handled the request (closed a modal/panel).
+  // Clears the fallback timeout so the window stays open.
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CANCEL_CLOSE, (event) => {
+    windowManager.cancelPendingClose(event.sender.id)
+  })
+
   // Show/hide macOS traffic light buttons (for fullscreen overlays)
   ipcMain.handle(IPC_CHANNELS.WINDOW_SET_TRAFFIC_LIGHTS, (event, visible: boolean) => {
     windowManager.setTrafficLightsVisible(event.sender.id, visible)
@@ -276,14 +297,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   ipcMain.handle(IPC_CHANNELS.CREATE_SESSION, async (_event, workspaceId: string, options?: import('../shared/types').CreateSessionOptions) => {
     const end = perf.start('ipc.createSession', { workspaceId })
     const session = sessionManager.createSession(workspaceId, options)
-    end()
-    return session
-  })
-
-  // Create a sub-session under a parent session
-  ipcMain.handle(IPC_CHANNELS.CREATE_SUB_SESSION, async (_event, workspaceId: string, parentSessionId: string, options?: import('../shared/types').CreateSessionOptions) => {
-    const end = perf.start('ipc.createSubSession', { workspaceId, parentSessionId })
-    const session = await sessionManager.createSubSession(workspaceId, parentSessionId, options)
     end()
     return session
   })
@@ -349,9 +362,19 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Respond to a permission request (bash command approval)
   // Returns true if the response was delivered, false if agent/session is gone
-  ipcMain.handle(IPC_CHANNELS.RESPOND_TO_PERMISSION, async (_event, sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
-    return sessionManager.respondToPermission(sessionId, requestId, allowed, alwaysAllow)
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.RESPOND_TO_PERMISSION,
+    async (
+      _event,
+      sessionId: string,
+      requestId: string,
+      allowed: boolean,
+      alwaysAllow: boolean,
+      options?: import('../shared/types').PermissionResponseOptions,
+    ) => {
+      return sessionManager.respondToPermission(sessionId, requestId, allowed, alwaysAllow, options)
+    },
+  )
 
   // Respond to a credential request (secure auth input)
   // Returns true if the response was delivered, false if agent/session is gone
@@ -437,15 +460,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         return sessionManager.markCompactionComplete(sessionId)
       case 'clearPendingPlanExecution':
         return sessionManager.clearPendingPlanExecution(sessionId)
-      // Sub-session hierarchy
-      case 'getSessionFamily':
-        return sessionManager.getSessionFamily(sessionId)
-      case 'updateSiblingOrder':
-        return sessionManager.updateSiblingOrder(command.orderedSessionIds)
-      case 'archiveCascade':
-        return sessionManager.archiveSessionCascade(sessionId)
-      case 'deleteCascade':
-        return sessionManager.deleteSessionCascade(sessionId)
       default: {
         const _exhaustive: never = command
         throw new Error(`Unknown session command: ${JSON.stringify(command)}`)
@@ -461,6 +475,14 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return sessionManager.getPendingPlanExecution(sessionId)
   })
 
+  // Get authoritative permission mode diagnostics for renderer reconciliation
+  ipcMain.handle(IPC_CHANNELS.GET_SESSION_PERMISSION_MODE_STATE, async (
+    _event,
+    sessionId: string
+  ) => {
+    return sessionManager.getSessionPermissionModeState(sessionId)
+  })
+
   // Read a file (with path validation to prevent traversal attacks)
   ipcMain.handle(IPC_CHANNELS.READ_FILE, async (_event, path: string) => {
     try {
@@ -470,22 +492,26 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       return content
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
-      ipcLog.error('readFile error:', message)
+      // ENOENT is expected for optional config files (e.g. automations.json)
+      if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+        ipcLog.debug('readFile: file not found:', path)
+      } else {
+        ipcLog.error('readFile error:', message)
+      }
       throw new Error(`Failed to read file: ${message}`)
     }
   })
 
-  // Read a file as a data URL for in-app binary preview (images).
-  // Returns data:{mime};base64,{content} — used by ImagePreviewOverlay.
-  // Note: PDFs use file:// URLs directly (Chromium's PDF viewer doesn't support data: URLs).
+  // Read an image file as a data URL for in-app image preview overlays.
+  // Returns data:{mime};base64,{content} — used by ImagePreviewOverlay and markdown image blocks.
   ipcMain.handle(IPC_CHANNELS.READ_FILE_DATA_URL, async (_event, path: string) => {
     try {
       const safePath = await validateFilePath(path)
       const buffer = await readFile(safePath)
       const ext = safePath.split('.').pop()?.toLowerCase() ?? ''
 
-      // Map extensions to MIME types (only formats Chromium can render in-app).
-      // HEIC/HEIF and TIFF are excluded — no Chromium codec, opened externally instead.
+      // Map previewable image extensions to MIME types.
+      // HEIC/HEIF/TIFF are intentionally excluded — no Chromium codec, opened externally instead.
       const mimeMap: Record<string, string> = {
         png: 'image/png',
         jpg: 'image/jpeg',
@@ -496,7 +522,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         bmp: 'image/bmp',
         ico: 'image/x-icon',
         avif: 'image/avif',
-        pdf: 'application/pdf',
       }
       const mime = mimeMap[ext] || 'application/octet-stream'
       const base64 = buffer.toString('base64')
@@ -530,7 +555,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       filters: [
         // Allow all files by default - the agent can figure out how to handle them
         { name: 'All Files', extensions: ['*'] },
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'ico', 'icns', 'heic', 'heif', 'svg'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'] },
         { name: 'Documents', extensions: ['pdf', 'docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt', 'txt', 'md', 'rtf'] },
         { name: 'Code', extensions: ['js', 'ts', 'tsx', 'jsx', 'py', 'json', 'css', 'html', 'xml', 'yaml', 'yml', 'sh', 'sql', 'go', 'rs', 'rb', 'php', 'java', 'c', 'cpp', 'h', 'swift', 'kt'] },
       ]
@@ -671,48 +696,61 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
             }
             shouldResize = true
             ipcLog.info(`Image exceeds ${maxDim}px limit (${imageSize.width}×${imageSize.height}), will resize to ${targetSize.width}×${targetSize.height}`)
+          } else if (!validation.valid && validation.errorCode === 'size_exceeded') {
+            // File >5MB — try resize+compress instead of rejecting
+            shouldResize = true
+            ipcLog.info(`Image exceeds 5MB (${(decoded.length / 1024 / 1024).toFixed(1)}MB), will attempt resize`)
           } else if (!validation.valid) {
-            // Other validation errors (e.g., file size > 5MB) - reject
             throw new Error(validation.error)
           }
 
           // If resize is needed (either recommended or required), do it now
-          if (shouldResize && targetSize) {
-            ipcLog.info(`Resizing image from ${imageSize.width}×${imageSize.height} to ${targetSize.width}×${targetSize.height}`)
+          if (shouldResize) {
+            const isPhoto = attachment.mimeType === 'image/jpeg'
 
-            try {
-              const resized = image.resize({
-                width: targetSize.width,
-                height: targetSize.height,
-                quality: 'best',
-              })
+            if (targetSize) {
+              // Dimension-exceeded: resize to specific target dimensions
+              ipcLog.info(`Resizing image from ${imageSize.width}×${imageSize.height} to ${targetSize.width}×${targetSize.height}`)
+              try {
+                const resized = image.resize({
+                  width: targetSize.width,
+                  height: targetSize.height,
+                  quality: 'best',
+                })
 
-              // Get as PNG for best quality (or JPEG for photos to save space)
-              const isPhoto = attachment.mimeType === 'image/jpeg'
-              decoded = isPhoto ? resized.toJPEG(IMAGE_LIMITS.JPEG_QUALITY_HIGH) : resized.toPNG()
+                decoded = isPhoto ? resized.toJPEG(IMAGE_LIMITS.JPEG_QUALITY_HIGH) : resized.toPNG()
+                wasResized = true
+                finalSize = decoded.length
+
+                // Re-validate final size after resize
+                if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
+                  decoded = resized.toJPEG(IMAGE_LIMITS.JPEG_QUALITY_FALLBACK)
+                  finalSize = decoded.length
+                  if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
+                    throw new Error(`Image still too large after resize (${(decoded.length / 1024 / 1024).toFixed(1)}MB). Please use a smaller image.`)
+                  }
+                }
+              } catch (resizeError) {
+                ipcLog.error('Image resize failed:', resizeError)
+                const reason = resizeError instanceof Error ? resizeError.message : String(resizeError)
+                throw new Error(`Image too large (${imageSize.width}×${imageSize.height}) and automatic resize failed: ${reason}. Please manually resize it before attaching.`)
+              }
+            } else {
+              // Size-exceeded or optimal resize — use shared utility for full pipeline
+              const result = resizeImageForAPI(decoded, { isPhoto })
+              if (!result) {
+                throw new Error(`Image too large (${(decoded.length / 1024 / 1024).toFixed(1)}MB) and could not be compressed enough. Please use a smaller image.`)
+              }
+              decoded = result.buffer
               wasResized = true
               finalSize = decoded.length
-
-              // Re-validate final size after resize (should be much smaller)
-              if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
-                // Even after resize it's too big - try more aggressive compression
-                decoded = resized.toJPEG(IMAGE_LIMITS.JPEG_QUALITY_FALLBACK)
-                finalSize = decoded.length
-                if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
-                  throw new Error(`Image still too large after resize (${(decoded.length / 1024 / 1024).toFixed(1)}MB). Please use a smaller image.`)
-                }
-              }
-
-              ipcLog.info(`Image resized: ${attachment.size} → ${finalSize} bytes (${Math.round((1 - finalSize / attachment.size) * 100)}% reduction)`)
-
-              // Store resized base64 to return to renderer
-              // This is used when sending to Claude API instead of original large base64
-              resizedBase64 = decoded.toString('base64')
-            } catch (resizeError) {
-              ipcLog.error('Image resize failed:', resizeError)
-              const reason = resizeError instanceof Error ? resizeError.message : String(resizeError)
-              throw new Error(`Image too large (${imageSize.width}×${imageSize.height}) and automatic resize failed: ${reason}. Please manually resize it before attaching.`)
             }
+
+            ipcLog.info(`Image resized: ${attachment.size} → ${finalSize} bytes (${Math.round((1 - finalSize / attachment.size) * 100)}% reduction)`)
+
+            // Store resized base64 to return to renderer
+            // This is used when sending to Claude API instead of original large base64
+            resizedBase64 = decoded.toString('base64')
           }
         }
 
@@ -817,12 +855,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Release notes
   ipcMain.handle(IPC_CHANNELS.GET_RELEASE_NOTES, () => {
-    const { getCombinedReleaseNotes } = require('@ws-workspace/shared/release-notes') as typeof import('@ws-workspace/shared/release-notes')
+    const { getCombinedReleaseNotes } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getCombinedReleaseNotes()
   })
 
   ipcMain.handle(IPC_CHANNELS.GET_LATEST_RELEASE_VERSION, () => {
-    const { getLatestReleaseVersion } = require('@ws-workspace/shared/release-notes') as typeof import('@ws-workspace/shared/release-notes')
+    const { getLatestReleaseVersion } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getLatestReleaseVersion()
   })
 
@@ -1041,13 +1079,13 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Dismiss update for this version (persists across restarts)
   ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async (_event, version: string) => {
-    const { setDismissedUpdateVersion } = await import('@ws-workspace/shared/config')
+    const { setDismissedUpdateVersion } = await import('@craft-agent/shared/config')
     setDismissedUpdateVersion(version)
   })
 
   // Get dismissed version
   ipcMain.handle(IPC_CHANNELS.UPDATE_GET_DISMISSED, async () => {
-    const { getDismissedUpdateVersion } = await import('@ws-workspace/shared/config')
+    const { getDismissedUpdateVersion } = await import('@craft-agent/shared/config')
     return getDismissedUpdateVersion()
   })
 
@@ -1240,7 +1278,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       }
 
       // Delete the config file
-      const configPath = join(CONFIG_DIR, 'config.json')
+      const configPath = join(homedir(), '.craft-agent', 'config.json')
       await unlink(configPath).catch(() => {
         // Ignore if file doesn't exist
       })
@@ -1430,12 +1468,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // ============================================================
 
   ipcMain.handle(IPC_CHANNELS.PI_GET_API_KEY_PROVIDERS, async () => {
-    const { getPiApiKeyProviders } = await import('@ws-workspace/shared/config')
+    const { getPiApiKeyProviders } = await import('@craft-agent/shared/config')
     return getPiApiKeyProviders()
   })
 
   ipcMain.handle(IPC_CHANNELS.PI_GET_PROVIDER_BASE_URL, async (_event, provider: string) => {
-    const { getPiProviderBaseUrl } = await import('@ws-workspace/shared/config')
+    const { getPiProviderBaseUrl } = await import('@craft-agent/shared/config')
     return getPiProviderBaseUrl(provider)
   })
 
@@ -1498,7 +1536,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
 
     // Load workspace config
-    const { loadWorkspaceConfig } = await import('@ws-workspace/shared/workspaces')
+    const { loadWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
     const config = loadWorkspaceConfig(workspace.rootPath)
 
     return {
@@ -1527,13 +1565,13 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     // Validate defaultLlmConnection exists before saving
     if (key === 'defaultLlmConnection' && value !== undefined && value !== null) {
-      const { getLlmConnection } = await import('@ws-workspace/shared/config/storage')
+      const { getLlmConnection } = await import('@craft-agent/shared/config/storage')
       if (!getLlmConnection(value as string)) {
         throw new Error(`LLM connection "${value}" not found`)
       }
     }
 
-    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@ws-workspace/shared/workspaces')
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
     const config = loadWorkspaceConfig(workspace.rootPath)
     if (!config) {
       throw new Error(`Failed to load workspace config: ${workspaceId}`)
@@ -1727,7 +1765,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       ipcLog.info(`[LLM_CONNECTION_TEST] Error for ${slug}: ${msg.slice(0, 500)}`)
-      const { parseValidationError } = await import('@ws-workspace/shared/config')
+      const { parseValidationError } = await import('@craft-agent/shared/config')
       return { success: false, error: parseValidationError(msg) }
     }
   })
@@ -1761,7 +1799,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         }
       }
 
-      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@ws-workspace/shared/workspaces')
+      const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
       const config = loadWorkspaceConfig(workspace.rootPath)
       if (!config) {
         return { success: false, error: 'Failed to load workspace config' }
@@ -1812,7 +1850,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     error?: string
   }> => {
     try {
-      const { startChatGptOAuth, exchangeChatGptCode } = await import('@ws-workspace/shared/auth')
+      const { startChatGptOAuth, exchangeChatGptCode } = await import('@craft-agent/shared/auth')
       const credentialManager = getCredentialManager()
 
       ipcLog.info(`Starting ChatGPT OAuth flow for connection: ${connectionSlug}`)
@@ -1850,7 +1888,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Cancel ongoing ChatGPT OAuth flow
   ipcMain.handle(IPC_CHANNELS.CHATGPT_CANCEL_OAUTH, async (): Promise<{ success: boolean }> => {
     try {
-      const { cancelChatGptOAuth } = await import('@ws-workspace/shared/auth')
+      const { cancelChatGptOAuth } = await import('@craft-agent/shared/auth')
       cancelChatGptOAuth()
       ipcLog.info('ChatGPT OAuth cancelled')
       return { success: true }
@@ -2185,10 +2223,10 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // Create a new source
-  ipcMain.handle(IPC_CHANNELS.SOURCES_CREATE, async (_event, workspaceId: string, config: Partial<import('@ws-workspace/shared/sources').CreateSourceInput>) => {
+  ipcMain.handle(IPC_CHANNELS.SOURCES_CREATE, async (_event, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-    const { createSource } = await import('@ws-workspace/shared/sources')
+    const { createSource } = await import('@craft-agent/shared/sources')
     return createSource(workspace.rootPath, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
@@ -2204,11 +2242,11 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   ipcMain.handle(IPC_CHANNELS.SOURCES_DELETE, async (_event, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-    const { deleteSource } = await import('@ws-workspace/shared/sources')
+    const { deleteSource } = await import('@craft-agent/shared/sources')
     deleteSource(workspace.rootPath, sourceSlug)
 
     // Clean up stale slug from workspace default sources
-    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@ws-workspace/shared/workspaces')
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
     const config = loadWorkspaceConfig(workspace.rootPath)
     if (config?.defaults?.enabledSourceSlugs?.includes(sourceSlug)) {
       config.defaults.enabledSourceSlugs = config.defaults.enabledSourceSlugs.filter(s => s !== sourceSlug)
@@ -2223,7 +2261,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       if (!workspace) {
         return { success: false, error: `Workspace not found: ${workspaceId}` }
       }
-      const { loadSource, getSourceCredentialManager } = await import('@ws-workspace/shared/sources')
+      const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
 
       const source = loadSource(workspace.rootPath, sourceSlug)
       if (!source || source.config.type !== 'mcp' || !source.config.mcp?.url) {
@@ -2258,7 +2296,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   ipcMain.handle(IPC_CHANNELS.SOURCES_SAVE_CREDENTIALS, async (_event, workspaceId: string, sourceSlug: string, credential: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
-    const { loadSource, getSourceCredentialManager } = await import('@ws-workspace/shared/sources')
+    const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
 
     const source = loadSource(workspace.rootPath, sourceSlug)
     if (!source) {
@@ -2279,7 +2317,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     // Load raw JSON file (not normalized) for UI display
     const { existsSync, readFileSync } = await import('fs')
-    const { getSourcePermissionsPath } = await import('@ws-workspace/shared/agent')
+    const { getSourcePermissionsPath } = await import('@craft-agent/shared/agent')
     const path = getSourcePermissionsPath(workspace.rootPath, sourceSlug)
 
     if (!existsSync(path)) return null
@@ -2300,7 +2338,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     // Load raw JSON file (not normalized) for UI display
     const { existsSync, readFileSync } = await import('fs')
-    const { getWorkspacePermissionsPath } = await import('@ws-workspace/shared/agent')
+    const { getWorkspacePermissionsPath } = await import('@craft-agent/shared/agent')
     const path = getWorkspacePermissionsPath(workspace.rootPath)
 
     if (!existsSync(path)) return null
@@ -2314,11 +2352,11 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
   })
 
-  // Get default permissions from ~/.ws-workspace/permissions/default.json
+  // Get default permissions from ~/.craft-agent/permissions/default.json
   // Returns raw JSON for UI display (patterns with comments), plus the file path
   ipcMain.handle(IPC_CHANNELS.DEFAULT_PERMISSIONS_GET, async () => {
     const { existsSync, readFileSync } = await import('fs')
-    const { getAppPermissionsDir } = await import('@ws-workspace/shared/agent')
+    const { getAppPermissionsDir } = await import('@craft-agent/shared/agent')
     const { join } = await import('path')
 
     const defaultPath = join(getAppPermissionsDir(), 'default.json')
@@ -2358,7 +2396,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       }
 
       // Create unified MCP client for both stdio and HTTP transports
-      const { CraftMcpClient } = await import('@ws-workspace/shared/mcp')
+      const { CraftMcpClient } = await import('@craft-agent/shared/mcp')
       let client: InstanceType<typeof CraftMcpClient>
 
       if (source.config.mcp.transport === 'stdio') {
@@ -2402,7 +2440,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       await client.close()
 
       // Load permissions patterns
-      const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@ws-workspace/shared/agent')
+      const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@craft-agent/shared/agent')
       const permissionsConfig = loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
 
       // Get merged permissions config
@@ -2453,7 +2491,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
 
     const { searchSessions } = await import('./search')
-    const { getWorkspaceSessionsPath } = await import('@ws-workspace/shared/workspaces')
+    const { getWorkspaceSessionsPath } = await import('@craft-agent/shared/workspaces')
 
     const sessionsDir = getWorkspaceSessionsPath(workspace.rootPath)
     ipcLog.debug(`SEARCH_SESSIONS: Searching "${query}" in ${sessionsDir}`)
@@ -2488,7 +2526,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       ipcLog.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    const { loadAllSkills } = await import('@ws-workspace/shared/skills')
+    const { loadAllSkills } = await import('@craft-agent/shared/skills')
     const skills = loadAllSkills(workspace.rootPath, workingDirectory)
     ipcLog.info(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
     return skills
@@ -2504,17 +2542,10 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     const { join } = await import('path')
     const { readdirSync, statSync } = await import('fs')
-    const { getWorkspaceSkillsPath } = await import('@ws-workspace/shared/workspaces')
+    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
 
     const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
     const skillDir = join(skillsDir, skillSlug)
-
-    interface SkillFile {
-      name: string
-      type: 'file' | 'directory'
-      size?: number
-      children?: SkillFile[]
-    }
 
     function scanDirectory(dirPath: string): SkillFile[] {
       try {
@@ -2557,7 +2588,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { deleteSkill } = await import('@ws-workspace/shared/skills')
+    const { deleteSkill } = await import('@craft-agent/shared/skills')
     deleteSkill(workspace.rootPath, skillSlug)
     ipcLog.info(`Deleted skill: ${skillSlug}`)
   })
@@ -2569,7 +2600,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     const { join } = await import('path')
     const { shell } = await import('electron')
-    const { getWorkspaceSkillsPath } = await import('@ws-workspace/shared/workspaces')
+    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
 
     const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
     const skillFile = join(skillsDir, skillSlug, 'SKILL.md')
@@ -2583,7 +2614,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     const { join } = await import('path')
     const { shell } = await import('electron')
-    const { getWorkspaceSkillsPath } = await import('@ws-workspace/shared/workspaces')
+    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
 
     const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
     const skillDir = join(skillsDir, skillSlug)
@@ -2599,7 +2630,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { listStatuses } = await import('@ws-workspace/shared/statuses')
+    const { listStatuses } = await import('@craft-agent/shared/statuses')
     return listStatuses(workspace.rootPath)
   })
 
@@ -2609,7 +2640,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { reorderStatuses } = await import('@ws-workspace/shared/statuses')
+    const { reorderStatuses } = await import('@craft-agent/shared/statuses')
     reorderStatuses(workspace.rootPath, orderedIds)
   })
 
@@ -2622,16 +2653,16 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { listLabels } = await import('@ws-workspace/shared/labels/storage')
+    const { listLabels } = await import('@craft-agent/shared/labels/storage')
     return listLabels(workspace.rootPath)
   })
 
   // Create a new label in a workspace
-  ipcMain.handle(IPC_CHANNELS.LABELS_CREATE, async (_event, workspaceId: string, input: import('@ws-workspace/shared/labels').CreateLabelInput) => {
+  ipcMain.handle(IPC_CHANNELS.LABELS_CREATE, async (_event, workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { createLabel } = await import('@ws-workspace/shared/labels/crud')
+    const { createLabel } = await import('@craft-agent/shared/labels/crud')
     const label = createLabel(workspace.rootPath, input)
     windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
     return label
@@ -2642,7 +2673,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { deleteLabel } = await import('@ws-workspace/shared/labels/crud')
+    const { deleteLabel } = await import('@craft-agent/shared/labels/crud')
     const result = deleteLabel(workspace.rootPath, labelId)
     windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
     return result
@@ -2653,19 +2684,203 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { listViews } = await import('@ws-workspace/shared/views/storage')
+    const { listViews } = await import('@craft-agent/shared/views/storage')
     return listViews(workspace.rootPath)
   })
 
   // Save views (replaces full array)
-  ipcMain.handle(IPC_CHANNELS.VIEWS_SAVE, async (_event, workspaceId: string, views: import('@ws-workspace/shared/views').ViewConfig[]) => {
+  ipcMain.handle(IPC_CHANNELS.VIEWS_SAVE, async (_event, workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { saveViews } = await import('@ws-workspace/shared/views/storage')
+    const { saveViews } = await import('@craft-agent/shared/views/storage')
     saveViews(workspace.rootPath, views)
     // Broadcast labels changed since views are used alongside labels in sidebar
     windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
+  })
+
+  // ============================================================
+  // Automation Testing (manual trigger from UI)
+  // ============================================================
+
+  ipcMain.handle(IPC_CHANNELS.TEST_AUTOMATION, async (_event, payload: import('../shared/types').TestAutomationPayload) => {
+    const workspace = getWorkspaceByNameOrId(payload.workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const results: import('../shared/types').TestAutomationActionResult[] = []
+    const { parsePromptReferences } = await import('@craft-agent/shared/automations')
+
+    for (const action of payload.actions) {
+      const start = Date.now()
+
+      // Parse @mentions from the prompt to resolve source/skill references
+      const references = parsePromptReferences(action.prompt)
+
+      try {
+        // Delegate to executePromptAutomation which handles:
+        // - @mention resolution (sources + skills)
+        // - enabledSourceSlugs, llmConnection, model, permissionMode on createSession
+        // - skillSlugs passed to sendMessage
+        const { sessionId } = await sessionManager.executePromptAutomation(
+          payload.workspaceId,
+          workspace.rootPath,
+          action.prompt,
+          payload.labels,
+          payload.permissionMode,
+          references.mentions,
+          action.llmConnection,
+          action.model,
+        )
+        results.push({
+          type: 'prompt',
+          success: true,
+          sessionId,
+          duration: Date.now() - start,
+        })
+
+        // Write history entry for test runs
+        if (payload.automationId) {
+          const entry = { id: payload.automationId, ts: Date.now(), ok: true, sessionId, prompt: action.prompt.slice(0, 200) }
+          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => ipcLog.warn('[Automations] Failed to write history:', e))
+        }
+      } catch (err: unknown) {
+        results.push({
+          type: 'prompt',
+          success: false,
+          stderr: (err as Error).message,
+          duration: Date.now() - start,
+        })
+
+        // Write failed history entry
+        if (payload.automationId) {
+          const entry = { id: payload.automationId, ts: Date.now(), ok: false, error: ((err as Error).message ?? '').slice(0, 200), prompt: action.prompt.slice(0, 200) }
+          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => ipcLog.warn('[Automations] Failed to write history:', e))
+        }
+      }
+    }
+
+    return { actions: results } satisfies import('../shared/types').TestAutomationResult
+  })
+
+  // History file name — matches AUTOMATIONS_HISTORY_FILE from @craft-agent/shared/automations/constants
+  const HISTORY_FILE = 'automations-history.jsonl'
+  interface HistoryEntry { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }
+
+  // Per-workspace config mutex: serializes read-modify-write cycles on automations.json
+  // to prevent concurrent IPC calls from clobbering each other's changes.
+  const configMutexes = new Map<string, Promise<void>>()
+  function withConfigMutex<T>(workspaceRoot: string, fn: () => Promise<T>): Promise<T> {
+    const prev = configMutexes.get(workspaceRoot) ?? Promise.resolve()
+    const next = prev.then(fn, fn) // run fn regardless of previous result
+    configMutexes.set(workspaceRoot, next.then(() => {}, () => {}))
+    return next
+  }
+
+  // Shared helper: resolve workspace, read automations.json, validate matcher, mutate, write back
+  interface AutomationsConfigJson { automations?: Record<string, Record<string, unknown>[]>; [key: string]: unknown }
+  async function withAutomationMatcher(workspaceId: string, eventName: string, matcherIndex: number, mutate: (matchers: Record<string, unknown>[], index: number, config: AutomationsConfigJson, genId: () => string) => void) {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    await withConfigMutex(workspace.rootPath, async () => {
+      const { resolveAutomationsConfigPath, generateShortId } = await import('@craft-agent/shared/automations/resolve-config-path')
+      const configPath = resolveAutomationsConfigPath(workspace.rootPath)
+
+      const raw = await readFile(configPath, 'utf-8')
+      const config = JSON.parse(raw)
+
+      const eventMap = config.automations ?? {}
+      const matchers = eventMap[eventName]
+      if (!Array.isArray(matchers) || matcherIndex < 0 || matcherIndex >= matchers.length) {
+        throw new Error(`Invalid automation reference: ${eventName}[${matcherIndex}]`)
+      }
+
+      mutate(matchers, matcherIndex, config, generateShortId)
+
+      // Backfill missing IDs on all matchers before writing
+      for (const eventMatchers of Object.values(eventMap)) {
+        if (!Array.isArray(eventMatchers)) continue
+        for (const m of eventMatchers as Record<string, unknown>[]) {
+          if (!m.id) m.id = generateShortId()
+        }
+      }
+
+      await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+    })
+  }
+
+  // Automation enabled state management (toggle enabled/disabled in automations.json)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_SET_ENABLED, async (_event, workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean) => {
+    await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx) => {
+      if (enabled) {
+        // Remove the enabled field entirely (defaults to true) to keep JSON clean
+        delete matchers[idx].enabled
+      } else {
+        matchers[idx].enabled = false
+      }
+    })
+  })
+
+  // Duplicate an automation matcher (deep-clone, new ID, append " Copy" to name, insert after original)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_DUPLICATE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
+    await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx, _config, genId) => {
+      const clone = JSON.parse(JSON.stringify(matchers[idx]))
+      clone.id = genId()
+      clone.name = clone.name ? `${clone.name} Copy` : 'Untitled Copy'
+      matchers.splice(idx + 1, 0, clone)
+    })
+  })
+
+  // Delete an automation matcher (remove from array, clean up empty event key)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_DELETE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
+    await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx, config) => {
+      matchers.splice(idx, 1)
+      if (matchers.length === 0) {
+        const eventMap = config.automations
+        if (eventMap) delete eventMap[eventName]
+      }
+    })
+  })
+
+  // Read execution history for a specific automation
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_GET_HISTORY, async (_event, workspaceId: string, automationId: string, limit = 20) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const historyPath = join(workspace.rootPath, HISTORY_FILE)
+    try {
+      const content = await readFile(historyPath, 'utf-8')
+      const lines = content.trim().split('\n').filter(Boolean)
+
+      return lines
+        .map(line => { try { return JSON.parse(line) } catch { return null } })
+        .filter((e): e is HistoryEntry => e?.id === automationId)
+        .slice(-limit)
+        .reverse()
+    } catch {
+      return [] // File doesn't exist yet
+    }
+  })
+
+  // Return last execution timestamp for all automations (for lastExecutedAt in list)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const historyPath = join(workspace.rootPath, HISTORY_FILE)
+    try {
+      const content = await readFile(historyPath, 'utf-8')
+      const result: Record<string, number> = {}
+      for (const line of content.trim().split('\n')) {
+        try {
+          const entry = JSON.parse(line)
+          if (entry.id && entry.ts) result[entry.id] = entry.ts
+        } catch { /* skip malformed lines */ }
+      }
+      return result
+    } catch {
+      return {}
+    }
   })
 
   // Generic workspace image loading (for source icons, status icons, etc.)
@@ -2808,28 +3023,28 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // ============================================================
 
   ipcMain.handle(IPC_CHANNELS.THEME_GET_APP, async () => {
-    const { loadAppTheme } = await import('@ws-workspace/shared/config/storage')
+    const { loadAppTheme } = await import('@craft-agent/shared/config/storage')
     return loadAppTheme()
   })
 
   // Preset themes (app-level)
   ipcMain.handle(IPC_CHANNELS.THEME_GET_PRESETS, async () => {
-    const { loadPresetThemes } = await import('@ws-workspace/shared/config/storage')
+    const { loadPresetThemes } = await import('@craft-agent/shared/config/storage')
     return loadPresetThemes()
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_LOAD_PRESET, async (_event, themeId: string) => {
-    const { loadPresetTheme } = await import('@ws-workspace/shared/config/storage')
+    const { loadPresetTheme } = await import('@craft-agent/shared/config/storage')
     return loadPresetTheme(themeId)
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_GET_COLOR_THEME, async () => {
-    const { getColorTheme } = await import('@ws-workspace/shared/config/storage')
+    const { getColorTheme } = await import('@craft-agent/shared/config/storage')
     return getColorTheme()
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_SET_COLOR_THEME, async (_event, themeId: string) => {
-    const { setColorTheme } = await import('@ws-workspace/shared/config/storage')
+    const { setColorTheme } = await import('@craft-agent/shared/config/storage')
     setColorTheme(themeId)
   })
 
@@ -2849,8 +3064,8 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Workspace-level theme overrides
   ipcMain.handle(IPC_CHANNELS.THEME_GET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string) => {
-    const { getWorkspaces } = await import('@ws-workspace/shared/config/storage')
-    const { getWorkspaceColorTheme } = await import('@ws-workspace/shared/workspaces/storage')
+    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
+    const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
     const workspace = workspaces.find(w => w.id === workspaceId)
     if (!workspace) return null
@@ -2858,8 +3073,8 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_SET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string, themeId: string | null) => {
-    const { getWorkspaces } = await import('@ws-workspace/shared/config/storage')
-    const { setWorkspaceColorTheme } = await import('@ws-workspace/shared/workspaces/storage')
+    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
+    const { setWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
     const workspace = workspaces.find(w => w.id === workspaceId)
     if (!workspace) return
@@ -2867,8 +3082,8 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_GET_ALL_WORKSPACE_THEMES, async () => {
-    const { getWorkspaces } = await import('@ws-workspace/shared/config/storage')
-    const { getWorkspaceColorTheme } = await import('@ws-workspace/shared/workspaces/storage')
+    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
+    const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
     const themes: Record<string, string | undefined> = {}
     for (const ws of workspaces) {
@@ -2894,9 +3109,9 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Tool icon mappings — loads tool-icons.json and resolves each entry's icon to a data URL
   // for display in the Appearance settings page
   ipcMain.handle(IPC_CHANNELS.TOOL_ICONS_GET_MAPPINGS, async () => {
-    const { getToolIconsDir } = await import('@ws-workspace/shared/config/storage')
-    const { loadToolIconConfig } = await import('@ws-workspace/shared/utils/cli-icon-resolver')
-    const { encodeIconToDataUrl } = await import('@ws-workspace/shared/utils/icon-encoder')
+    const { getToolIconsDir } = await import('@craft-agent/shared/config/storage')
+    const { loadToolIconConfig } = await import('@craft-agent/shared/utils/cli-icon-resolver')
+    const { encodeIconToDataUrl } = await import('@craft-agent/shared/utils/icon-encoder')
     const { join } = await import('path')
 
     const toolIconsDir = getToolIconsDir()
@@ -2920,7 +3135,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Logo URL resolution (uses Node.js filesystem cache for provider domains)
   ipcMain.handle(IPC_CHANNELS.LOGO_GET_URL, async (_event, serviceUrl: string, provider?: string) => {
-    const { getLogoUrl } = await import('@ws-workspace/shared/utils/logo')
+    const { getLogoUrl } = await import('@craft-agent/shared/utils/logo')
     const result = getLogoUrl(serviceUrl, provider)
     return result
   })
@@ -2937,13 +3152,13 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get notifications enabled setting
   ipcMain.handle(IPC_CHANNELS.NOTIFICATION_GET_ENABLED, async () => {
-    const { getNotificationsEnabled } = await import('@ws-workspace/shared/config/storage')
+    const { getNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     return getNotificationsEnabled()
   })
 
   // Set notifications enabled setting (also triggers permission request if enabling)
   ipcMain.handle(IPC_CHANNELS.NOTIFICATION_SET_ENABLED, async (_event, enabled: boolean) => {
-    const { setNotificationsEnabled } = await import('@ws-workspace/shared/config/storage')
+    const { setNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     setNotificationsEnabled(enabled)
 
     // If enabling, trigger a notification to request macOS permission
@@ -2955,49 +3170,49 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get auto-capitalisation setting
   ipcMain.handle(IPC_CHANNELS.INPUT_GET_AUTO_CAPITALISATION, async () => {
-    const { getAutoCapitalisation } = await import('@ws-workspace/shared/config/storage')
+    const { getAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
     return getAutoCapitalisation()
   })
 
   // Set auto-capitalisation setting
   ipcMain.handle(IPC_CHANNELS.INPUT_SET_AUTO_CAPITALISATION, async (_event, enabled: boolean) => {
-    const { setAutoCapitalisation } = await import('@ws-workspace/shared/config/storage')
+    const { setAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
     setAutoCapitalisation(enabled)
   })
 
   // Get send message key setting
   ipcMain.handle(IPC_CHANNELS.INPUT_GET_SEND_MESSAGE_KEY, async () => {
-    const { getSendMessageKey } = await import('@ws-workspace/shared/config/storage')
+    const { getSendMessageKey } = await import('@craft-agent/shared/config/storage')
     return getSendMessageKey()
   })
 
   // Set send message key setting
   ipcMain.handle(IPC_CHANNELS.INPUT_SET_SEND_MESSAGE_KEY, async (_event, key: 'enter' | 'cmd-enter') => {
-    const { setSendMessageKey } = await import('@ws-workspace/shared/config/storage')
+    const { setSendMessageKey } = await import('@craft-agent/shared/config/storage')
     setSendMessageKey(key)
   })
 
   // Get spell check setting
   ipcMain.handle(IPC_CHANNELS.INPUT_GET_SPELL_CHECK, async () => {
-    const { getSpellCheck } = await import('@ws-workspace/shared/config/storage')
+    const { getSpellCheck } = await import('@craft-agent/shared/config/storage')
     return getSpellCheck()
   })
 
   // Set spell check setting
   ipcMain.handle(IPC_CHANNELS.INPUT_SET_SPELL_CHECK, async (_event, enabled: boolean) => {
-    const { setSpellCheck } = await import('@ws-workspace/shared/config/storage')
+    const { setSpellCheck } = await import('@craft-agent/shared/config/storage')
     setSpellCheck(enabled)
   })
 
   // Get keep awake while running setting
   ipcMain.handle(IPC_CHANNELS.POWER_GET_KEEP_AWAKE, async () => {
-    const { getKeepAwakeWhileRunning } = await import('@ws-workspace/shared/config/storage')
+    const { getKeepAwakeWhileRunning } = await import('@craft-agent/shared/config/storage')
     return getKeepAwakeWhileRunning()
   })
 
   // Set keep awake while running setting
   ipcMain.handle(IPC_CHANNELS.POWER_SET_KEEP_AWAKE, async (_event, enabled: boolean) => {
-    const { setKeepAwakeWhileRunning } = await import('@ws-workspace/shared/config/storage')
+    const { setKeepAwakeWhileRunning } = await import('@craft-agent/shared/config/storage')
     const { setKeepAwakeSetting } = await import('./power-manager')
     // Save to config
     setKeepAwakeWhileRunning(enabled)
@@ -3007,26 +3222,22 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get rich tool descriptions setting
   ipcMain.handle(IPC_CHANNELS.APPEARANCE_GET_RICH_TOOL_DESCRIPTIONS, async () => {
-    const { getRichToolDescriptions } = await import('@ws-workspace/shared/config/storage')
+    const { getRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
     return getRichToolDescriptions()
   })
 
   // Set rich tool descriptions setting
   ipcMain.handle(IPC_CHANNELS.APPEARANCE_SET_RICH_TOOL_DESCRIPTIONS, async (_event, enabled: boolean) => {
-    const { setRichToolDescriptions } = await import('@ws-workspace/shared/config/storage')
+    const { setRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
     setRichToolDescriptions(enabled)
   })
 
-  // Update app badge count
-  ipcMain.handle(IPC_CHANNELS.BADGE_UPDATE, async (_event, count: number) => {
-    const { updateBadgeCount } = await import('./notifications')
-    updateBadgeCount(count)
-  })
-
-  // Clear app badge
-  ipcMain.handle(IPC_CHANNELS.BADGE_CLEAR, async () => {
-    const { clearBadgeCount } = await import('./notifications')
-    clearBadgeCount()
+  // Refresh badge count from current unread state (called by renderer on mount)
+  ipcMain.handle(IPC_CHANNELS.BADGE_REFRESH, async () => {
+    try {
+      await sessionManager.waitForInit()
+    } catch { /* continue */ }
+    sessionManager.refreshBadge()
   })
 
   // Set dock icon with badge (canvas-rendered badge image from renderer)
@@ -3043,5 +3254,221 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Note: Permission mode cycling settings (cyclablePermissionModes) are now workspace-level
   // and managed via WORKSPACE_SETTINGS_GET/UPDATE channels
+
+  // =========================================================================
+  // Browser Pane Management
+  // =========================================================================
+
+  if (browserPaneManager) {
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_CREATE, (_event, input?: string | BrowserPaneCreateOptions) => {
+      if (typeof input === 'string') {
+        return browserPaneManager.createInstance(input)
+      }
+
+      if (input?.bindToSessionId) {
+        return browserPaneManager.createForSession(input.bindToSessionId, { show: input.show ?? false })
+      }
+
+      return browserPaneManager.createInstance(input?.id, { show: input?.show })
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_DESTROY, (_event, id: string) => {
+      browserPaneManager.destroyInstance(id)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_LIST, () => {
+      return browserPaneManager.listInstances()
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_NAVIGATE, async (_event, id: string, url: string) => {
+      try {
+        return await browserPaneManager.navigate(id, url)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] navigate failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_GO_BACK, async (_event, id: string) => {
+      try {
+        return await browserPaneManager.goBack(id)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] goBack failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_GO_FORWARD, async (_event, id: string) => {
+      try {
+        return await browserPaneManager.goForward(id)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] goForward failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_RELOAD, (_event, id: string) => {
+      browserPaneManager.reload(id)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_STOP, (_event, id: string) => {
+      browserPaneManager.stop(id)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_FOCUS, (_event, id: string) => {
+      browserPaneManager.focus(id)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_EMPTY_STATE_LAUNCH, async (event, payload: BrowserEmptyStateLaunchPayload) => {
+      try {
+        return await browserPaneManager.handleEmptyStateLaunchFromRenderer(event.sender.id, payload)
+      } catch (err) {
+        ipcLog.error('[browser-pane] empty-state launch IPC failed:', err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SNAPSHOT, async (_event, id: string) => {
+      try {
+        return await browserPaneManager.getAccessibilitySnapshot(id)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] snapshot failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_CLICK, async (_event, id: string, ref: string) => {
+      try {
+        return await browserPaneManager.clickElement(id, ref)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] click failed for ${id} ref=${ref}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_FILL, async (_event, id: string, ref: string, value: string) => {
+      try {
+        return await browserPaneManager.fillElement(id, ref, value)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] fill failed for ${id} ref=${ref}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SELECT, async (_event, id: string, ref: string, value: string) => {
+      try {
+        return await browserPaneManager.selectOption(id, ref, value)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] select failed for ${id} ref=${ref}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SCREENSHOT, async (_event, id: string, options?: BrowserScreenshotOptions) => {
+      try {
+        const result = await browserPaneManager.screenshot(id, options)
+        return {
+          base64: result.imageBuffer.toString('base64'),
+          imageFormat: result.imageFormat,
+          metadata: result.metadata,
+        }
+      } catch (err) {
+        ipcLog.error(`[browser-pane] screenshot failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_EVALUATE, async (_event, id: string, expression: string) => {
+      try {
+        return await browserPaneManager.evaluate(id, expression)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] evaluate failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SCROLL, async (_event, id: string, direction: string, amount?: number) => {
+      const validDirections = ['up', 'down', 'left', 'right']
+      if (!validDirections.includes(direction)) {
+        throw new Error(`Invalid scroll direction: ${direction}`)
+      }
+      try {
+        return await browserPaneManager.scroll(id, direction as 'up' | 'down' | 'left' | 'right', amount)
+      } catch (err) {
+        ipcLog.error(`[browser-pane] scroll failed for ${id}:`, err)
+        throw err
+      }
+    })
+
+    // Forward browser state changes to all windows
+    browserPaneManager.onStateChange((info) => {
+      windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_STATE_CHANGED, info)
+    })
+
+    // Forward browser removals so renderer can immediately drop stale tabs
+    browserPaneManager.onRemoved((id) => {
+      windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_REMOVED, id)
+    })
+
+    // Forward browser interaction/focus events so renderer can align panel focus.
+    browserPaneManager.onInteracted((id) => {
+      windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_INTERACTED, id)
+    })
+  }
+
+  // ─── Agency repos (shared skills & memory) ────────────────────────────────
+
+  const AGENCY_REPOS: Record<string, { repo: string; dir: string }> = {
+    'skills-library': { repo: 'https://github.com/W-S-Agency/skills-library.git', dir: 'skills-library' },
+    'agency-memory': { repo: 'https://github.com/W-S-Agency/agency-memory.git', dir: 'agency-memory' },
+  }
+
+  const getAgencyDir = () => join(homedir(), '.ws-workspace', 'agency')
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_STATUS, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { imported: false, error: 'Unknown repo' }
+
+    const repoPath = join(getAgencyDir(), config.dir)
+    if (!existsSync(repoPath)) return { imported: false }
+
+    try {
+      const gitLog = execSync('git log -1 --format=%cI', { cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+      return { imported: true, path: repoPath, lastUpdated: gitLog }
+    } catch {
+      return { imported: true, path: repoPath }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_IMPORT, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { success: false, error: 'Unknown repo' }
+
+    const agencyDir = getAgencyDir()
+    const repoPath = join(agencyDir, config.dir)
+
+    try {
+      if (!existsSync(agencyDir)) mkdirSync(agencyDir, { recursive: true })
+      execSync(`git clone "${config.repo}" "${repoPath}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Clone failed' }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_UPDATE, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { success: false, error: 'Unknown repo' }
+
+    const repoPath = join(getAgencyDir(), config.dir)
+    if (!existsSync(repoPath)) return { success: false, error: 'Repo not imported' }
+
+    try {
+      execSync('git pull --ff-only', { cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Pull failed' }
+    }
+  })
 
 }

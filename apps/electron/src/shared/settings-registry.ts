@@ -40,8 +40,8 @@ export const SETTINGS_PAGES = [
   { id: 'permissions', label: 'Permissions', description: 'Explore mode rules' },
   { id: 'labels', label: 'Labels', description: 'Manage session labels' },
   { id: 'shortcuts', label: 'Shortcuts', description: 'Keyboard shortcuts' },
+  { id: 'agency', label: 'Agency', description: 'Shared skills and memory' },
   { id: 'preferences', label: 'Preferences', description: 'User preferences' },
-  { id: 'agency', label: 'Agency', description: 'Skills library, agency memory' },
 ] as const satisfies readonly SettingsPageDefinition[]
 
 /**

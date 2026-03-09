@@ -16,7 +16,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@ws-workspace/ui'
+} from '@craft-agent/ui'
 import type { SourceConnectionStatus } from '../../../shared/types'
 
 export interface SourceStatusIndicatorProps {
@@ -157,26 +157,25 @@ export function deriveConnectionStatus(source: {
     return source.config.connectionStatus
   }
 
-  // Derive from auth state using isSourceUsable-compatible logic
+  // Derive from auth state
   const api = source.config.api
-  const authType = mcp?.authType || api?.authType
-  const requiresAuth = authType !== undefined && authType !== 'none'
+  const authType = mcp?.authType ?? api?.authType
+  const isAuthenticated = authType === 'none' || authType === undefined
+    ? true
+    : source.config['isAuthenticated'] === true
 
-  // Sources with no auth requirement are always usable
-  if (!requiresAuth) {
-    if (source.config.type === 'local') {
-      return 'connected'
-    }
-    return 'untested'
-  }
-
-  // Source requires auth — check authenticated state directly.
-  // This is a UI status mapper that needs raw auth state to distinguish needs_auth vs connected.
-  // Cannot use isSourceUsable() here because it returns boolean, not the granular status needed.
-  // eslint-disable-next-line craft-sources/no-inline-source-auth-check
-  if (!source.config.isAuthenticated) {
+  if (!isAuthenticated) {
     return 'needs_auth'
   }
 
-  return 'connected'
+  if (isAuthenticated) {
+    return 'connected'
+  }
+
+  // Local sources are always connected
+  if (source.config.type === 'local') {
+    return 'connected'
+  }
+
+  return 'untested'
 }

@@ -12,7 +12,7 @@
  * - AsyncGenerator for streaming: Consistent with existing CraftAgent API
  */
 
-import type { AgentEvent } from '@ws-workspace/core/types';
+import type { AgentEvent } from '@craft-agent/core/types';
 import type { FileAttachment } from '../../utils/files.ts';
 import type { ThinkingLevel } from '../thinking-levels.ts';
 import type { PermissionMode } from '../mode-manager.ts';
@@ -32,7 +32,7 @@ import type { ModelProvider } from '../../config/models.ts';
 // Import LLM connection types for auth
 import type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
 export type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
-import type { HookSystem } from '../../hooks-simple/index.ts';
+import type { AutomationSystem } from '../../automations/index.ts';
 
 /**
  * Provider identifier for AI backends.
@@ -48,7 +48,7 @@ export type AgentProvider = ModelProvider;
 /**
  * Permission prompt types for different tool categories.
  */
-export type PermissionRequestType = 'bash' | 'file_write' | 'mcp_mutation' | 'api_mutation';
+export type PermissionRequestType = 'bash' | 'file_write' | 'mcp_mutation' | 'api_mutation' | 'admin_approval';
 
 /**
  * Permission request callback signature.
@@ -60,6 +60,13 @@ export type PermissionCallback = (request: {
   command?: string;
   description: string;
   type?: PermissionRequestType;
+  appName?: string;
+  reason?: string;
+  impact?: string;
+  requiresSystemPrompt?: boolean;
+  rememberForMinutes?: number;
+  commandHash?: string;
+  approvalTtlSeconds?: number;
 }) => void;
 
 /**
@@ -174,8 +181,8 @@ export interface CoreBackendConfig {
   /** System prompt preset ('default' | 'mini' | custom string) */
   systemPromptPreset?: 'default' | 'mini' | string;
 
-  /** Workspace-level hook system for user-defined SDK hooks (hooks.json) */
-  hookSystem?: HookSystem;
+  /** Workspace-level automation system for user-defined automations (automations.json) */
+  automationSystem?: AutomationSystem;
 
   /**
    * Per-session environment variable overrides for the SDK subprocess.
@@ -203,6 +210,14 @@ export interface CoreBackendConfig {
 
   /** Callback to get recent messages for recovery context */
   getRecoveryMessages?: () => RecoveryMessage[];
+
+  /**
+   * Optional callback to resize an oversized image for API compatibility.
+   * Called from PreToolUse when Read targets an image exceeding the base64 size limit.
+   * Returns path to the resized temp file, or null if resize not possible.
+   * Provided by the host app (Electron uses nativeImage, server could use sharp, etc.).
+   */
+  onImageResize?: (filePath: string, maxSizeBytes: number) => Promise<string | null>;
 
   /**
    * Pre-computed source configurations for initial setup.
@@ -349,6 +364,15 @@ export interface AgentBackend {
   applyBridgeUpdates(context: BridgeUpdateContext): Promise<void>;
 
   /**
+   * Ensure branch sessions are backend-ready before first user message.
+   * Called at branch creation time to avoid creating "fake branches" that have
+   * copied transcript history but no actual backend branch context.
+   *
+   * Default behavior can be a no-op for providers that don't need preflight.
+   */
+  ensureBranchReady(): Promise<void>;
+
+  /**
    * Check if currently processing a query.
    */
   isProcessing(): boolean;
@@ -391,6 +415,9 @@ export interface AgentBackend {
 
   /** Get SDK session ID (for resume, null if no session) */
   getSessionId(): string | null;
+
+  /** Whether this backend supports session branching */
+  readonly supportsBranching: boolean;
 
   // ============================================================
   // Source Management
@@ -505,7 +532,7 @@ export interface AgentBackend {
    */
   onBackendAuthRequired: ((reason: string) => void) | null;
 
-  /** Called when agent requests spawning a sub-session */
+  /** Called when agent requests spawning a new session */
   onSpawnSession: ((request: import('../base-agent.ts').SpawnSessionRequest) => Promise<import('../base-agent.ts').SpawnSessionResult>) | null;
 }
 
@@ -550,6 +577,9 @@ export interface BackendConfig extends CoreBackendConfig {
    * Used to read/write credentials under the correct key.
    */
   connectionSlug?: string;
+
+  /** Workspace-level automation system for user-defined SDK hooks (automations.json) */
+  automationSystem?: AutomationSystem;
 
   /**
    * Opaque runtime payload resolved by backend drivers.

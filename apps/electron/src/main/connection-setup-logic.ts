@@ -5,12 +5,12 @@
  * No dependency on ipcMain, sessionManager, credential manager, or file I/O.
  */
 
-import type { ModelDefinition } from '@ws-workspace/shared/config/models'
+import type { ModelDefinition } from '@craft-agent/shared/config/models'
 import {
   type LlmConnection,
   getDefaultModelsForConnection,
   getDefaultModelForConnection,
-} from '@ws-workspace/shared/config'
+} from '@craft-agent/shared/config'
 
 // ============================================================
 // Error Parsing

@@ -10,15 +10,15 @@
  * 3. MODEL_REGISTRY — hardcoded offline seed data, last resort
  */
 
-import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@ws-workspace/shared/config'
-import type { ModelDefinition } from '@ws-workspace/shared/config'
+import type { ModelFetcherMap, ModelFetcherCredentials, FetchableProvider } from '@craft-agent/shared/config'
+import type { ModelDefinition } from '@craft-agent/shared/config'
 import {
   getLlmConnections,
   getLlmConnection,
   updateLlmConnection,
   isCompatProvider,
   getModelsForProviderType,
-} from '@ws-workspace/shared/config'
+} from '@craft-agent/shared/config'
 import { MODEL_FETCHERS } from './registry'
 import { ipcLog } from '../logger'
 

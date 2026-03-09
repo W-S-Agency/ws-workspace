@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import type { ComponentEntry } from './registry'
-import { TooltipProvider } from '@ws-workspace/ui'
+import { TooltipProvider } from '@craft-agent/ui'
 
 type BackgroundStyle = 'default' | 'light' | 'dark' | 'checkered'
 
@@ -168,7 +168,12 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
       </div>
 
       {/* Preview area */}
-      <div className="flex-1 overflow-auto p-4 flex items-center justify-center">
+      <div
+        className={cn(
+          'flex-1 overflow-auto p-4 flex',
+          component.layout === 'top' ? 'items-start justify-center' : 'items-center justify-center'
+        )}
+      >
         {/* Resizable container */}
         <div
           ref={containerRef}

@@ -4,7 +4,7 @@ import { FadingText } from '@/components/ui/fading-text'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import type { LoadedSkill, LoadedSource, FileSearchResult } from '../../../shared/types'
-import { AGENTS_PLUGIN_NAME } from '@ws-workspace/shared/skills/types'
+import { AGENTS_PLUGIN_NAME } from '@craft-agent/shared/skills/types'
 
 // ============================================================================
 // Types
@@ -259,6 +259,7 @@ export function InlineMentionMenu({
   return (
     <div
       ref={menuRef}
+      data-inline-menu
       className={cn('fixed z-dropdown', MENU_CONTAINER_STYLE, className)}
       style={{
         left: Math.round(position.x) - 10,

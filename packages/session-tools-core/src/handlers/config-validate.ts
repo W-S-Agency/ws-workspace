@@ -1,12 +1,14 @@
 /**
  * Config Validate Handler
  *
- * Validates WS Workspace configuration files.
+ * Validates Craft Agent configuration files.
  * Uses full validators if available (Claude), otherwise basic validation (Codex).
  */
 
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+
+const AUTOMATIONS_CONFIG_FILE = 'automations.json';
 import type { SessionToolContext } from '../context.ts';
 import type { ToolResult } from '../types.ts';
 import { successResponse, errorResponse } from '../response.ts';
@@ -18,7 +20,7 @@ import {
 import { getSourceConfigPath } from '../source-helpers.ts';
 
 export interface ConfigValidateArgs {
-  target: 'config' | 'sources' | 'statuses' | 'preferences' | 'permissions' | 'hooks' | 'tool-icons' | 'all';
+  target: 'config' | 'sources' | 'statuses' | 'preferences' | 'permissions' | 'automations' | 'tool-icons' | 'all';
   sourceSlug?: string;
 }
 
@@ -33,7 +35,7 @@ export async function handleConfigValidate(
   args: ConfigValidateArgs
 ): Promise<ToolResult> {
   const { target, sourceSlug } = args;
-  const wsWorkspaceRoot = join(homedir(), '.ws-workspace');
+  const craftAgentRoot = join(homedir(), '.craft-agent');
 
   // If full validators available (Claude), use them
   if (ctx.validators) {
@@ -60,8 +62,8 @@ export async function handleConfigValidate(
         case 'permissions':
           result = ctx.validators.validatePermissions(ctx.workspacePath, sourceSlug);
           break;
-        case 'hooks':
-          result = ctx.validators.validateHooks(ctx.workspacePath);
+        case 'automations':
+          result = ctx.validators.validateAutomations(ctx.workspacePath);
           break;
         case 'tool-icons':
           result = ctx.validators.validateToolIcons();
@@ -71,7 +73,7 @@ export async function handleConfigValidate(
           break;
       }
 
-      return successResponse(formatValidationResult(result));
+      return successResponse(formatValidationResult(result!));
     } catch (error) {
       return errorResponse(
         `Config validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -83,7 +85,7 @@ export async function handleConfigValidate(
   switch (target) {
     case 'config': {
       const result = validateJsonFileHasFields(
-        join(wsWorkspaceRoot, 'config.json'),
+        join(craftAgentRoot, 'config.json'),
         ['workspaces']
       );
       return successResponse(formatValidationResult(result));
@@ -136,7 +138,7 @@ export async function handleConfigValidate(
 
     case 'preferences': {
       const result = validateJsonFileHasFields(
-        join(wsWorkspaceRoot, 'preferences.json'),
+        join(craftAgentRoot, 'preferences.json'),
         []
       );
       return successResponse(formatValidationResult(result));
@@ -152,18 +154,18 @@ export async function handleConfigValidate(
       return successResponse(formatValidationResult(result));
     }
 
-    case 'hooks': {
-      const hooksPath = join(ctx.workspacePath, 'hooks.json');
-      if (!ctx.fs.exists(hooksPath)) {
-        return successResponse('✓ No hooks.json (no hooks configured)');
+    case 'automations': {
+      const automationsPath = join(ctx.workspacePath, AUTOMATIONS_CONFIG_FILE);
+      if (ctx.fs.exists(automationsPath)) {
+        const result = validateJsonFileHasFields(automationsPath, []);
+        return successResponse(formatValidationResult(result));
       }
-      const result = validateJsonFileHasFields(hooksPath, ['matchers']);
-      return successResponse(formatValidationResult(result));
+      return successResponse(`✓ No ${AUTOMATIONS_CONFIG_FILE} (no automations configured)`);
     }
 
     case 'tool-icons': {
       const result = validateJsonFileHasFields(
-        join(wsWorkspaceRoot, 'tool-icons', 'tool-icons.json'),
+        join(craftAgentRoot, 'tool-icons', 'tool-icons.json'),
         ['version', 'tools']
       );
       return successResponse(formatValidationResult(result));
@@ -171,11 +173,11 @@ export async function handleConfigValidate(
 
     case 'all': {
       const configResult = validateJsonFileHasFields(
-        join(wsWorkspaceRoot, 'config.json'),
+        join(craftAgentRoot, 'config.json'),
         ['workspaces']
       );
       const prefsResult = validateJsonFileHasFields(
-        join(wsWorkspaceRoot, 'preferences.json'),
+        join(craftAgentRoot, 'preferences.json'),
         []
       );
       const merged = mergeResults(configResult, prefsResult);
@@ -184,7 +186,7 @@ export async function handleConfigValidate(
 
     default:
       return errorResponse(
-        `Unknown validation target: ${target}. Valid targets: config, sources, statuses, preferences, permissions, hooks, tool-icons, all`
+        `Unknown validation target: ${target}. Valid targets: config, sources, statuses, preferences, permissions, automations, tool-icons, all`
       );
   }
 }

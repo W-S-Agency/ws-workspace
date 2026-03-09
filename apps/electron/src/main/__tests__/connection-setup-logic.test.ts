@@ -5,7 +5,7 @@ import {
   validateModelList,
   BUILT_IN_CONNECTION_TEMPLATES,
 } from '../connection-setup-logic'
-import type { ModelDefinition } from '@ws-workspace/shared/config/models'
+import type { ModelDefinition } from '@craft-agent/shared/config/models'
 
 // ============================================================
 // validateModelList
@@ -20,7 +20,7 @@ describe('validateModelList', () => {
 
   it('accepts ModelDefinition[] with a matching default', () => {
     const models: ModelDefinition[] = [
-      { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5', shortName: 'Sonnet', description: '', provider: 'anthropic', contextWindow: 200000 },
+      { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', shortName: 'Sonnet', description: '', provider: 'anthropic', contextWindow: 200000 },
       { id: 'claude-haiku-4-5', name: 'Haiku 4.5', shortName: 'Haiku', description: '', provider: 'anthropic', contextWindow: 200000 },
     ]
     const result = validateModelList(models, 'claude-haiku-4-5')
@@ -31,10 +31,10 @@ describe('validateModelList', () => {
   // because the old code used Array.includes() to compare strings against objects
   it('regression: Pi ModelDefinition[] with valid default is accepted', () => {
     const piModels: ModelDefinition[] = [
-      { id: 'pi/claude-sonnet-4-5', name: 'Claude Sonnet 4.5', shortName: 'Sonnet', description: '', provider: 'pi', contextWindow: 200000 },
+      { id: 'pi/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', shortName: 'Sonnet', description: '', provider: 'pi', contextWindow: 200000 },
       { id: 'pi/claude-haiku-4-5', name: 'Claude Haiku 4.5', shortName: 'Haiku', description: '', provider: 'pi', contextWindow: 200000 },
     ]
-    const result = validateModelList(piModels, 'pi/claude-sonnet-4-5')
+    const result = validateModelList(piModels, 'pi/claude-sonnet-4-6')
     expect(result.valid).toBe(true)
   })
 

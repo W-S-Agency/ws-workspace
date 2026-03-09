@@ -13,7 +13,7 @@ interface WelcomeStepProps {
  * WelcomeStep - Initial welcome screen for onboarding
  *
  * Shows different messaging for new vs existing users:
- * - New users: Welcome to WS Workspace
+ * - New users: Welcome to Craft Agents
  * - Existing users: Update your API connection settings
  */
 export function WelcomeStep({

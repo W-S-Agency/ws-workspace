@@ -5,7 +5,7 @@
  * They replace the old "connections" concept with a more flexible, folder-based architecture.
  *
  * File structure:
- * ~/.ws-workspace/workspaces/{workspaceId}/sources/{sourceSlug}/
+ * ~/.craft-agent/workspaces/{workspaceId}/sources/{sourceSlug}/
  *   ├── config.json   - Source settings
  *   └── guide.md      - Usage guidelines + cached data (in YAML frontmatter)
  */
@@ -310,55 +310,18 @@ export interface LocalSourceConfig {
 export type SourceConnectionStatus = 'connected' | 'needs_auth' | 'failed' | 'untested' | 'local_disabled';
 
 // ============================================================================
-// Source Brand & Action Cards
+// Source Brand
 // ============================================================================
 
 /**
- * Brand theming for a source's UI elements (card headers, buttons).
+ * Brand theming for a source's UI elements.
  * Uses the EntityColor system for light/dark mode support.
  */
 export interface SourceBrand {
-  /** Primary brand color — used for card header tint and primary action buttons.
+  /** Primary brand color — used for source-branded UI elements.
    *  Can be a system color name ("accent", "info") or custom { light, dark } values.
    *  Defaults to "accent" if not set. */
   color?: import('../colors/types').EntityColor;
-}
-
-/**
- * Handler for an action card button — defines what happens on click.
- */
-export type SourceCardActionHandler =
-  | { type: 'api'; method: string; path: string }
-  | { type: 'mcp'; tool: string }
-  | { type: 'copy' }
-  | { type: 'open'; urlTemplate: string };
-
-/**
- * An action button in a source card footer.
- */
-export interface SourceCardAction {
-  /** Button label (e.g., "Send Email", "Post to #channel") */
-  label: string;
-  /** 'primary' uses brand color, 'secondary' uses outline */
-  variant: 'primary' | 'secondary';
-  /** What happens on click */
-  handler: SourceCardActionHandler;
-}
-
-/**
- * Defines a card type that a source can render in AI responses.
- * Sources declare these in config.json so the UI knows how to present
- * structured content with source-branded styling and action buttons.
- */
-export interface SourceCardDefinition {
-  /** Card type identifier (e.g., "email", "message", "event", "payment") */
-  type: string;
-  /** Human-readable label for the card header (e.g., "Email Draft") */
-  label: string;
-  /** Lucide icon name for the header (e.g., "mail", "hash", "calendar") */
-  icon: string;
-  /** Action buttons shown in the card footer */
-  actions: SourceCardAction[];
 }
 
 // ============================================================================
@@ -394,11 +357,8 @@ export interface FolderSourceConfig {
   // If not set, extracted from guide.md first paragraph
   tagline?: string;
 
-  // Brand theming for this source's UI elements (card headers, buttons)
+  // Brand theming for this source's UI elements
   brand?: SourceBrand;
-
-  // Action card definitions this source supports
-  cards?: SourceCardDefinition[];
 
   // Status tracking
   isAuthenticated?: boolean;
@@ -438,7 +398,7 @@ export interface LoadedSource {
   /** Absolute path to source folder (for resolving relative icon paths) */
   folderPath: string;
 
-  /** Absolute path to workspace folder (e.g., ~/.ws-workspace/workspaces/xxx) */
+  /** Absolute path to workspace folder (e.g., ~/.craft-agent/workspaces/xxx) */
   workspaceRootPath: string;
 
   /**

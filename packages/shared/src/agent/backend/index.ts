@@ -12,12 +12,12 @@
  *
  * Usage:
  * ```typescript
- * import { createAgent, type AgentBackend } from '@ws-workspace/shared/agent/backend';
+ * import { createAgent, type AgentBackend } from '@craft-agent/shared/agent/backend';
  *
  * const agent = createAgent({
  *   provider: 'anthropic',
  *   workspace: myWorkspace,
- *   model: 'claude-sonnet-4-5-20250929',
+ *   model: 'claude-sonnet-4-6',
  * });
  *
  * for await (const event of agent.chat('Hello')) {

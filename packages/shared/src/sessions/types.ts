@@ -11,7 +11,7 @@
 
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import type { ThinkingLevel } from '../agent/thinking-levels.ts';
-import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthStatus, CredentialInputMode, StoredMessage } from '@ws-workspace/core/types';
+import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthStatus, CredentialInputMode, StoredMessage } from '@craft-agent/core/types';
 
 /**
  * Session fields that persist to disk.
@@ -33,7 +33,7 @@ export const SESSION_PERSISTENT_FIELDS = [
   // Read tracking
   'lastReadMessageId', 'hasUnread',
   // Config
-  'enabledSourceSlugs', 'permissionMode', 'workingDirectory',
+  'enabledSourceSlugs', 'permissionMode', 'previousPermissionMode', 'workingDirectory',
   // Model/Connection
   'model', 'llmConnection', 'connectionLocked', 'thinkingLevel',
   // Sharing
@@ -42,8 +42,10 @@ export const SESSION_PERSISTENT_FIELDS = [
   'pendingPlanExecution',
   // Archive
   'isArchived', 'archivedAt',
-  // Hierarchy
-  'parentSessionId', 'siblingOrder',
+  // Branching
+  'branchFromMessageId',
+  'branchFromSdkSessionId',
+  'branchFromSessionPath',
 ] as const;
 
 export type SessionPersistentField = typeof SESSION_PERSISTENT_FIELDS[number];
@@ -80,9 +82,9 @@ export interface SessionTokenUsage {
 
 /**
  * Stored message format (simplified for persistence)
- * Re-exported from @ws-workspace/core for convenience
+ * Re-exported from @craft-agent/core for convenience
  */
-export type { StoredMessage } from '@ws-workspace/core/types';
+export type { StoredMessage } from '@craft-agent/core/types';
 
 /**
  * Session configuration (persisted metadata)
@@ -104,6 +106,8 @@ export interface SessionConfig {
   isFlagged?: boolean;
   /** Permission mode for this session ('safe', 'ask', 'allow-all') */
   permissionMode?: PermissionMode;
+  /** Previous permission mode (used to preserve modeTransition context across restarts) */
+  previousPermissionMode?: PermissionMode;
   /** User-controlled session status - determines inbox vs completed */
   sessionStatus?: SessionStatus;
   /** Labels applied to this session (bare IDs or "id::value" entries) */
@@ -151,11 +155,12 @@ export interface SessionConfig {
   isArchived?: boolean;
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
-  // Sub-session hierarchy (1 level max)
-  /** Parent session ID (if this is a sub-session). Null/undefined = root session. */
-  parentSessionId?: string;
-  /** Explicit sibling order (lazy - only populated when user reorders). */
-  siblingOrder?: number;
+  /** Message ID this session was branched from (set when created via branching). */
+  branchFromMessageId?: string;
+  /** Parent session's SDK session ID (for SDK-level fork via resume + forkSession). */
+  branchFromSdkSessionId?: string;
+  /** Parent session's storage path (for Pi SDK fork — locating parent Pi session files). */
+  branchFromSessionPath?: string;
 }
 
 /**
@@ -176,7 +181,7 @@ export interface SessionHeader {
   id: string;
   /** SDK session ID (captured after first message) */
   sdkSessionId?: string;
-  /** Workspace root path (stored as portable path, e.g., ~/.ws-workspace/...) */
+  /** Workspace root path (stored as portable path, e.g., ~/.craft-agent/...) */
   workspaceRootPath: string;
   /** Optional user-defined name */
   name?: string;
@@ -188,6 +193,8 @@ export interface SessionHeader {
   isFlagged?: boolean;
   /** Permission mode for this session ('safe', 'ask', 'allow-all') */
   permissionMode?: PermissionMode;
+  /** Previous permission mode (used to preserve modeTransition context across restarts) */
+  previousPermissionMode?: PermissionMode;
   /** User-controlled session status - determines inbox vs completed */
   sessionStatus?: SessionStatus;
   /** Labels applied to this session (bare IDs or "id::value" entries) */
@@ -235,11 +242,6 @@ export interface SessionHeader {
   isArchived?: boolean;
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
-  // Sub-session hierarchy (1 level max)
-  /** Parent session ID (if this is a sub-session). Null/undefined = root session. */
-  parentSessionId?: string;
-  /** Explicit sibling order (lazy - only populated when user reorders). */
-  siblingOrder?: number;
   // Pre-computed fields for fast list loading
   /** Number of messages in session */
   messageCount: number;
@@ -276,6 +278,8 @@ export interface SessionMetadata {
   labels?: string[];
   /** Permission mode for this session */
   permissionMode?: PermissionMode;
+  /** Previous permission mode (used to preserve modeTransition context across restarts) */
+  previousPermissionMode?: PermissionMode;
   /** Number of plan files for this session */
   planCount?: number;
   /** Shared viewer URL (if shared via viewer) */
@@ -314,9 +318,6 @@ export interface SessionMetadata {
   isArchived?: boolean;
   /** Timestamp when session was archived (for retention policy) */
   archivedAt?: number;
-  // Sub-session hierarchy (1 level max)
-  /** Parent session ID (if this is a sub-session). Null/undefined = root session. */
-  parentSessionId?: string;
-  /** Explicit sibling order (lazy - only populated when user reorders). */
-  siblingOrder?: number;
+  /** Message ID that this session was branched from */
+  branchFromMessageId?: string;
 }

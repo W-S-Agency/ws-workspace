@@ -27,7 +27,7 @@ import {
   type ToolRow,
 } from '@/components/info'
 import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
-import type { PermissionsConfigFile } from '@ws-workspace/shared/agent/modes'
+import type { PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
 
 interface SourceInfoPageProps {
   sourceSlug: string
@@ -270,7 +270,8 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   useEffect(() => {
     if (!window.electronAPI?.onSourcesChanged) return
 
-    const cleanup = window.electronAPI.onSourcesChanged((sources) => {
+    const cleanup = window.electronAPI.onSourcesChanged((changedWorkspaceId, sources) => {
+      if (changedWorkspaceId !== workspaceId) return
       const updated = sources.find((s) => s.config.slug === sourceSlug)
 
       if (updated) {

@@ -4,12 +4,53 @@ import { loadShellEnv } from './shell-env'
 loadShellEnv()
 
 import { app, BrowserWindow } from 'electron'
-import { initSentry, getSentry } from './sentry'
+import { createHash } from 'crypto'
+import { hostname, homedir } from 'os'
+// Sentry error tracking — loaded dynamically to avoid crash in dev mode.
+// @sentry/electron/main calls electron.app.getAppPath() at module scope,
+// which fails when running via esbuild dev server (not packaged).
+const SentryNoOp = { init() {}, setUser() {}, setTag() {}, captureException() {}, captureMessage() {} }
+let Sentry: typeof import('@sentry/electron/main') = SentryNoOp as any
+try {
+  Sentry = require('@sentry/electron/main')
+  Sentry.init({
+    dsn: process.env.SENTRY_ELECTRON_INGEST_URL,
+    environment: app.isPackaged ? 'production' : 'development',
+    release: app.getVersion(),
+    enabled: !!process.env.SENTRY_ELECTRON_INGEST_URL,
+    beforeSend(event) {
+      if (event.request?.headers) {
+        const sensitiveHeaders = ['authorization', 'cookie', 'x-api-key']
+        for (const header of sensitiveHeaders) {
+          if (event.request.headers[header]) {
+            event.request.headers[header] = '[REDACTED]'
+          }
+        }
+      }
+      if (event.breadcrumbs) {
+        for (const breadcrumb of event.breadcrumbs) {
+          if (breadcrumb.data) {
+            for (const key of Object.keys(breadcrumb.data)) {
+              const lowerKey = key.toLowerCase()
+              if (lowerKey.includes('token') || lowerKey.includes('key') ||
+                  lowerKey.includes('secret') || lowerKey.includes('password') ||
+                  lowerKey.includes('credential') || lowerKey.includes('auth')) {
+                breadcrumb.data[key] = '[REDACTED]'
+              }
+            }
+          }
+        }
+      }
+      return event
+    },
+  })
+  const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
+  Sentry.setUser({ id: machineId })
+} catch {
+  console.warn('⚠️  Sentry not available (expected in dev mode)')
+}
 
-// Initialize Sentry early (no-op if DSN not configured)
-initSentry()
-
-import { join } from 'path'
+import { join, delimiter } from 'path'
 import { existsSync } from 'fs'
 import { SessionManager } from './sessions'
 import { registerIpcHandlers } from './ipc'
@@ -17,25 +58,25 @@ import { initModelRefreshService, getModelRefreshService } from './model-fetcher
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@ws-workspace/shared/config'
-import { getDefaultWorkspacesDir } from '@ws-workspace/shared/workspaces'
-import { initializeDocs } from '@ws-workspace/shared/docs'
-import { initializeReleaseNotes } from '@ws-workspace/shared/release-notes'
-import { ensureDefaultPermissions } from '@ws-workspace/shared/agent/permissions-config'
-import { ensureToolIcons, ensurePresetThemes } from '@ws-workspace/shared/config'
-import { setBundledAssetsRoot } from '@ws-workspace/shared/utils'
-import { initializeBackendHostRuntime } from '@ws-workspace/shared/agent/backend'
-import { setPowerShellValidatorRoot } from '@ws-workspace/shared/agent'
+import { getWorkspaces, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
+import { initializeDocs } from '@craft-agent/shared/docs'
+import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
+import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
+import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
+import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
+import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
+import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
+import { BrowserPaneManager } from './browser-pane-manager'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
-import { setPerfEnabled, enableDebug } from '@ws-workspace/shared/utils'
-import { registerPiModelResolver } from '@ws-workspace/shared/config'
-import { getPiModelsForAuthProvider, getAllPiModels } from '@ws-workspace/shared/config'
-import { initNotificationService, clearBadgeCount, initBadgeIcon, initInstanceBadge } from './notifications'
+import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
+import { registerPiModelResolver } from '@craft-agent/shared/config'
+import { getPiModelsForAuthProvider, getAllPiModels } from '@craft-agent/shared/config'
+import { initNotificationService, initBadgeIcon, initInstanceBadge } from './notifications'
 import { checkForUpdatesOnLaunch, setWindowManager as setAutoUpdateWindowManager, isUpdating } from './auto-update'
 import { validateGitBashPath } from './git-bash'
-import { migrateFromLegacyConfigDir } from './migrate-config'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -47,25 +88,73 @@ if (isDebugMode) {
   setPerfEnabled(true)
 }
 
+// Bundle CLI tools: resolve platform-specific uv binary and wrapper scripts.
+// These are available to all agent Bash sessions via CRAFT_UV, CRAFT_SCRIPTS env vars
+// and PATH prepend. uv auto-downloads Python 3.12 on first use (~5s, then cached).
+{
+  // In packaged app: resources are at process.resourcesPath/app/resources/
+  // In dev: resources are at __dirname/../resources/ (sibling of dist/)
+  const resourcesBase = app.isPackaged
+    ? join(process.resourcesPath, 'app')
+    : join(__dirname, '..')
+  const platformKey = `${process.platform}-${process.arch}`
+  const uvPlatformDir = join(resourcesBase, 'resources', 'bin', platformKey)
+  const uvBinary = join(uvPlatformDir, process.platform === 'win32' ? 'uv.exe' : 'uv')
+  const binDir = join(resourcesBase, 'resources', 'bin')
+  const scriptsDir = join(resourcesBase, 'resources', 'scripts')
+
+  const bundledUvExists = existsSync(uvBinary)
+  const fallbackUv = bundledUvExists ? null : 'uv'
+
+  process.env.CRAFT_UV = bundledUvExists ? uvBinary : (fallbackUv ?? uvBinary)
+  process.env.CRAFT_SCRIPTS = scriptsDir
+  // Prepend both generic wrappers dir and platform uv dir:
+  // - binDir exposes wrapper commands (pdf-tool, docx-tool, ...)
+  // - uvPlatformDir exposes raw `uv` for direct shell usage / debugging
+  process.env.PATH = `${binDir}${delimiter}${uvPlatformDir}${delimiter}${process.env.PATH}`
+
+  if (!bundledUvExists) {
+    mainLog.warn('Bundled uv binary missing, CLI document tools may fail unless uv is available on PATH.', {
+      expectedUvPath: uvBinary,
+      usingCraftUv: process.env.CRAFT_UV,
+    })
+  }
+
+  if (isDebugMode) {
+    mainLog.info('CLI tools configured:', { uvBinary: process.env.CRAFT_UV, binDir, scriptsDir, bundledUvExists })
+  }
+}
+
 // Register Pi model resolver so llm-connections.ts can resolve Pi models
 // without importing @mariozechner/pi-ai (which breaks the Vite renderer build)
 registerPiModelResolver((piAuthProvider) =>
   piAuthProvider ? getPiModelsForAuthProvider(piAuthProvider) : getAllPiModels()
 )
 
-// Custom URL scheme for deeplinks (e.g., wsworkspace://auth-complete)
-const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'wsworkspace'
+// Custom URL scheme for deeplinks (e.g., craftagents://auth-complete)
+// Supports multi-instance dev: CRAFT_DEEPLINK_SCHEME env var (craftagents1, craftagents2, etc.)
+const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
+let browserPaneManager: BrowserPaneManager | null = null
 
 // Store pending deep link if app not ready yet (cold start)
 let pendingDeepLink: string | null = null
 
 // Set app name early (before app.whenReady) to ensure correct macOS menu bar title
-app.setName(process.env.CRAFT_APP_NAME || 'WS Workspace')
+// Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
+app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
 
-// Register as default protocol client for wsworkspace:// URLs
+// Isolate dev instance userData to prevent conflicts with production app.
+// This separates Electron internals (GPU cache, window state, session storage)
+// while still sharing workspace config from ~/.craft-agent/
+if (!app.isPackaged) {
+  const devUserData = join(app.getPath('userData'), '-dev')
+  app.setPath('userData', devUserData)
+}
+
+// Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
 if (process.defaultApp) {
   // Development mode: need to pass the app path
@@ -97,7 +186,8 @@ app.on('open-url', (event, url) => {
 })
 
 // Handle deeplink on Windows/Linux (single instance check)
-const gotTheLock = app.requestSingleInstanceLock()
+// Skip lock in dev mode — allows running alongside production app
+const gotTheLock = app.isPackaged ? app.requestSingleInstanceLock() : true
 if (!gotTheLock) {
   app.quit()
 } else {
@@ -176,9 +266,6 @@ async function createInitialWindows(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  // Sync data from ~/.craft-agent/ to ~/.ws-workspace/ (runs every launch, fast no-op if no legacy dir)
-  migrateFromLegacyConfigDir()
-
   // Register bundled assets root so all seeding functions can find their files
   // (docs, permissions, themes, tool-icons resolve via getBundledAssetsDir)
   setBundledAssetsRoot(__dirname)
@@ -205,10 +292,10 @@ app.whenReady().then(async () => {
   // Ensure default permissions file exists (copies bundled default.json on first run)
   ensureDefaultPermissions()
 
-  // Seed tool icons to ~/.ws-workspace/tool-icons/ (copies bundled SVGs on first run)
+  // Seed tool icons to ~/.craft-agent/tool-icons/ (copies bundled SVGs on first run)
   ensureToolIcons()
 
-  // Seed preset themes to ~/.ws-workspace/themes/ (copies bundled theme JSONs on first run)
+  // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
   ensurePresetThemes()
 
   // Register thumbnail:// protocol handler (scheme was registered earlier, before app.whenReady)
@@ -260,7 +347,7 @@ app.whenReady().then(async () => {
 
     // Restore persisted Git Bash path on Windows (must happen before any SDK subprocess spawn)
     if (process.platform === 'win32') {
-      const { getGitBashPath, clearGitBashPath } = await import('@ws-workspace/shared/config')
+      const { getGitBashPath, clearGitBashPath } = await import('@craft-agent/shared/config')
       const gitBashPath = getGitBashPath()
       if (gitBashPath) {
         const validation = await validateGitBashPath(gitBashPath)
@@ -279,7 +366,7 @@ app.whenReady().then(async () => {
     // before any renderer can send messages. The credential resolver uses lazy
     // import() so it doesn't depend on session manager being initialized first.
     const modelRefreshService = initModelRefreshService(async (slug: string) => {
-      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
+      const { getCredentialManager } = await import('@craft-agent/shared/credentials')
       const manager = getCredentialManager()
       const [apiKey, oauth] = await Promise.all([
         manager.getLlmApiKey(slug).catch(() => null),
@@ -293,8 +380,14 @@ app.whenReady().then(async () => {
       }
     })
 
+    // Initialize browser pane manager
+    browserPaneManager = new BrowserPaneManager()
+    browserPaneManager.setWindowManager(windowManager)
+    browserPaneManager.registerToolbarIpc()
+    sessionManager.setBrowserPaneManager(browserPaneManager)
+
     // Register IPC handlers (must happen before window creation)
-    registerIpcHandlers(sessionManager, windowManager)
+    registerIpcHandlers(sessionManager, windowManager, browserPaneManager)
 
     // Create initial windows (restores from saved state or opens first workspace)
     await createInitialWindows()
@@ -308,7 +401,7 @@ app.whenReady().then(async () => {
     // Run credential health check at startup to detect issues early
     // (corruption, machine migration, missing credentials for default connection)
     try {
-      const { getCredentialManager } = await import('@ws-workspace/shared/credentials')
+      const { getCredentialManager } = await import('@craft-agent/shared/credentials')
       const credentialManager = getCredentialManager()
       const health = await credentialManager.checkHealth()
       if (!health.healthy) {
@@ -327,15 +420,15 @@ app.whenReady().then(async () => {
     // Runs after init so config and auth state are available.
     // Derives values from the default LLM connection instead of legacy config fields.
     try {
-      const { getLlmConnection, getDefaultLlmConnection } = await import('@ws-workspace/shared/config')
+      const { getLlmConnection, getDefaultLlmConnection } = await import('@craft-agent/shared/config')
       const workspaces = getWorkspaces()
       const defaultConnSlug = getDefaultLlmConnection()
       const defaultConn = defaultConnSlug ? getLlmConnection(defaultConnSlug) : null
-      getSentry().setTag('authType', defaultConn?.authType ?? 'unknown')
-      getSentry().setTag('providerType', defaultConn?.providerType ?? 'unknown')
-      getSentry().setTag('hasCustomEndpoint', String(!!defaultConn?.baseUrl))
-      getSentry().setTag('model', defaultConn?.defaultModel ?? 'default')
-      getSentry().setTag('workspaceCount', String(workspaces.length))
+      Sentry.setTag('authType', defaultConn?.authType ?? 'unknown')
+      Sentry.setTag('providerType', defaultConn?.providerType ?? 'unknown')
+      Sentry.setTag('hasCustomEndpoint', String(!!defaultConn?.baseUrl))
+      Sentry.setTag('model', defaultConn?.defaultModel ?? 'default')
+      Sentry.setTag('workspaceCount', String(workspaces.length))
     } catch (err) {
       mainLog.warn('Failed to set Sentry context tags:', err)
     }
@@ -369,10 +462,10 @@ app.whenReady().then(async () => {
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {
-    if (!windowManager?.hasWindows()) {
+    if (BrowserWindow.getAllWindows().length === 0 && windowManager) {
       // Open first workspace or last focused
       const workspaces = getWorkspaces()
-      if (workspaces.length > 0 && windowManager) {
+      if (workspaces.length > 0) {
         const savedState = loadWindowState()
         const wsId = savedState?.lastFocusedWorkspaceId || workspaces[0].id
         // Verify workspace still exists
@@ -401,6 +494,9 @@ app.on('before-quit', async (event) => {
   // Avoid re-entry when we call app.exit()
   if (isQuitting) return
   isQuitting = true
+
+  // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
+  windowManager?.setAppQuitting(true)
 
   if (windowManager) {
     // Get full window states (includes bounds, type, and query)
@@ -432,6 +528,11 @@ app.on('before-quit', async (event) => {
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
 
+    // Clean up browser pane instances
+    if (browserPaneManager) {
+      browserPaneManager.destroyAll()
+    }
+
     // Stop all model refresh timers
     getModelRefreshService().stopAll()
 
@@ -456,10 +557,10 @@ app.on('before-quit', async (event) => {
 // a custom handler can interfere with @sentry/electron's automatic capture.
 process.on('uncaughtException', (error) => {
   mainLog.error('Uncaught exception:', error)
-  getSentry().captureException(error)
+  Sentry.captureException(error)
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   mainLog.error('Unhandled rejection at:', promise, 'reason:', reason)
-  getSentry().captureException(reason instanceof Error ? reason : new Error(String(reason)))
+  Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)))
 })

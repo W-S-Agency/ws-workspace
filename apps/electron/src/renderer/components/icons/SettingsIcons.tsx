@@ -141,6 +141,21 @@ export const ShortcutsIcon = ({ className }: IconProps) => (
   </svg>
 )
 
+/** Agency icon (shared knowledge) */
+export const AgencyIcon = ({ className }: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      d="M12 7V3H2V21H22V7H12ZM6 19H4V17H6V19ZM6 15H4V13H6V15ZM6 11H4V9H6V11ZM6 7H4V5H6V7ZM10 19H8V17H10V19ZM10 15H8V13H10V15ZM10 11H8V9H10V11ZM10 7H8V5H10V7ZM20 19H12V17H14V15H12V13H14V11H12V9H20V19ZM18 11H16V13H18V11ZM18 15H16V17H18V15Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 /** User icon for preferences */
 export const PreferencesIcon = ({ className }: IconProps) => (
   <svg
@@ -153,21 +168,6 @@ export const PreferencesIcon = ({ className }: IconProps) => (
       fillRule="evenodd"
       clipRule="evenodd"
       d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM8.5 9.5C8.5 7.567 10.067 6 12 6C13.933 6 15.5 7.567 15.5 9.5C15.5 11.433 13.933 13 12 13C10.067 13 8.5 11.433 8.5 9.5ZM18.2579 16.9843C16.7921 18.8222 14.5336 20 12 20C9.46642 20 7.20792 18.8222 5.74212 16.9843C7.36304 15.8211 9.57493 15 12 15C14.4251 15 16.637 15.8211 18.2579 16.9843Z"
-      fill="currentColor"
-    />
-  </svg>
-)
-
-/** Library/building icon for agency settings */
-export const AgencyIcon = ({ className }: IconProps) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-  >
-    <path
-      d="M12 3L2 7V9H22V7L12 3ZM4 10V18H6V10H4ZM8 10V18H10V10H8ZM14 10V18H16V10H14ZM18 10V18H20V10H18ZM2 19V21H22V19H2Z"
       fill="currentColor"
     />
   </svg>
@@ -186,6 +186,6 @@ export const SETTINGS_ICONS: Record<SettingsSubpage, React.ComponentType<IconPro
   permissions: PermissionsIcon,
   labels: LabelsIcon,
   shortcuts: ShortcutsIcon,
-  preferences: PreferencesIcon,
   agency: AgencyIcon,
+  preferences: PreferencesIcon,
 }

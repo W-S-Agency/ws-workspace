@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Search, X } from 'lucide-react'
-import { Spinner } from '@ws-workspace/ui'
+import { Spinner } from '@craft-agent/ui'
 
 /**
  * SessionSearchHeader - Presentational component for session list search UI.

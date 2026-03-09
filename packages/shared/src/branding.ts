@@ -1,5 +1,5 @@
 /**
- * Centralized branding assets for WS Workspace
+ * Centralized branding assets for Craft Agent
  * Used by OAuth callback pages
  */
 

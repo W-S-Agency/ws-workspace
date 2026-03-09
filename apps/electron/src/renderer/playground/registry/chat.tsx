@@ -2,7 +2,7 @@ import * as React from 'react'
 import type { ComponentEntry } from './types'
 import { AttachmentPreview } from '@/components/app-shell/AttachmentPreview'
 import { SetupAuthBanner } from '@/components/app-shell/SetupAuthBanner'
-import { TurnCard, type ActivityItem } from '@ws-workspace/ui'
+import { TurnCard, type ActivityItem } from '@craft-agent/ui'
 import type { BackgroundTask } from '@/components/app-shell/ActiveTasksBar'
 import { ActiveOptionBadges } from '@/components/app-shell/ActiveOptionBadges'
 import { InputContainer } from '@/components/app-shell/input'
@@ -491,17 +491,17 @@ function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBar
 
         {/* Real InputContainer */}
         <InputContainer
-          placeholder="Message WS Workspace..."
+          placeholder="Message Craft Agent..."
           disabled={false}
           isProcessing={false}
-          currentModel="claude-sonnet-4-5-20250929"
+          currentModel="claude-sonnet-4-6"
           permissionMode={permissionMode}
           onPermissionModeChange={setPermissionMode}
           ultrathinkEnabled={ultrathinkEnabled}
           onUltrathinkChange={setUltrathinkEnabled}
           sources={mockSources}
           enabledSourceSlugs={['github-api', 'local-files']}
-          workingDirectory="/Users/demo/projects/ws-workspace"
+          workingDirectory="/Users/demo/projects/craft-agent"
           sessionId="playground-session"
           onSubmit={mockInputCallbacks.onSubmit}
           onModelChange={mockInputCallbacks.onModelChange}
@@ -599,17 +599,17 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
 
       {/* Real InputContainer - handles animation automatically */}
       <InputContainer
-        placeholder="Message WS Workspace..."
+        placeholder="Message Craft Agent..."
         disabled={false}
         isProcessing={false}
-        currentModel="claude-sonnet-4-5-20250929"
+        currentModel="claude-sonnet-4-6"
         permissionMode={permissionMode}
         onPermissionModeChange={setPermissionMode}
         ultrathinkEnabled={ultrathinkEnabled}
         onUltrathinkChange={setUltrathinkEnabled}
         sources={mockSources}
         enabledSourceSlugs={['github-api', 'local-files']}
-        workingDirectory="/Users/demo/projects/ws-workspace"
+        workingDirectory="/Users/demo/projects/craft-agent"
         sessionId="playground-session"
         structuredInput={structuredInput}
         onStructuredResponse={handlePermissionResponse}
@@ -941,7 +941,7 @@ export const chatComponents: ComponentEntry[] = [
         name: 'placeholder',
         description: 'Textarea placeholder text',
         control: { type: 'string', placeholder: 'Message...' },
-        defaultValue: 'Message WS Workspace...',
+        defaultValue: 'Message Craft Agent...',
       },
       {
         name: 'currentModel',
@@ -949,12 +949,12 @@ export const chatComponents: ComponentEntry[] = [
         control: {
           type: 'select',
           options: [
-            { label: 'Sonnet 4.5', value: 'claude-sonnet-4-5-20250929' },
+            { label: 'Sonnet 4.6', value: 'claude-sonnet-4-6' },
             { label: 'Opus 4.6', value: 'claude-opus-4-6' },
             { label: 'Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
           ],
         },
-        defaultValue: 'claude-sonnet-4-5-20250929',
+        defaultValue: 'claude-sonnet-4-6',
       },
       {
         name: 'permissionMode',
@@ -979,7 +979,7 @@ export const chatComponents: ComponentEntry[] = [
         name: 'workingDirectory',
         description: 'Current working directory',
         control: { type: 'string', placeholder: '/path/to/project' },
-        defaultValue: '/Users/demo/projects/ws-workspace',
+        defaultValue: '/Users/demo/projects/craft-agent',
       },
     ],
     mockData: () => {

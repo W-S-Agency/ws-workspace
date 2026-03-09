@@ -1,5 +1,5 @@
 /**
- * Generates index.html showcasing all @ws-workspace/mermaid rendering capabilities.
+ * Generates index.html showcasing all @craft-agent/mermaid rendering capabilities.
  *
  * Usage: bun run packages/mermaid/index.ts
  *

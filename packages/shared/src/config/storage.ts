@@ -15,7 +15,7 @@ import { expandPath, toPortablePath, getBundledAssetsDir } from '../utils/paths.
 import { debug } from '../utils/debug.ts';
 import { readJsonFileSync } from '../utils/files.ts';
 import { CONFIG_DIR } from './paths.ts';
-import type { StoredAttachment, StoredMessage } from '@ws-workspace/core/types';
+import type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 import type { Plan } from '../agent/plan-types.ts';
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import { type ConfigDefaults } from './config-defaults-schema.ts';
@@ -30,10 +30,10 @@ export type {
   McpAuthType,
   AuthType,
   OAuthCredentials,
-} from '@ws-workspace/core/types';
+} from '@craft-agent/core/types';
 
 // Import for local use
-import type { Workspace, AuthType } from '@ws-workspace/core/types';
+import type { Workspace, AuthType } from '@craft-agent/core/types';
 
 // Import LLM connection types and constants
 import type { LlmConnection } from './llm-connections.ts';
@@ -106,7 +106,7 @@ function syncConfigDefaults(): void {
 }
 
 /**
- * Load config defaults from ~/.ws-workspace/config-defaults.json
+ * Load config defaults from ~/.craft-agent/config-defaults.json
  * This file is synced from bundled assets on every launch.
  */
 export function loadConfigDefaults(): ConfigDefaults {
@@ -128,7 +128,7 @@ export function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
-  // Initialize bundled docs (creates ~/.ws-workspace/docs/ with sources.md, agents.md, permissions.md)
+  // Initialize bundled docs (creates ~/.craft-agent/docs/ with sources.md, agents.md, permissions.md)
   initializeDocs();
 
   // Initialize config defaults
@@ -658,7 +658,7 @@ function ensureWorkspaceDir(workspaceId: string): string {
 
 
 // Re-export types from core for convenience
-export type { StoredAttachment, StoredMessage } from '@ws-workspace/core/types';
+export type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 
 export interface WorkspaceConversation {
   messages: StoredMessage[];
@@ -885,7 +885,7 @@ let presetsInitialized = false;
 
 /**
  * Get the app-level themes directory.
- * Preset themes are stored at ~/.ws-workspace/themes/
+ * Preset themes are stored at ~/.craft-agent/themes/
  */
 export function getAppThemesDir(): string {
   return APP_THEMES_DIR;
@@ -1325,13 +1325,13 @@ function backfillAllConnectionModels(config: StoredConfig): boolean {
       }
     }
 
-    if (!connection.defaultModel) {
+    if (!connection.defaultModel && defaultModel) {
       connection.defaultModel = defaultModel;
       changed = true;
     }
 
     // Validate that existing defaultModel is in the models list
-    if (connection.defaultModel && connection.models && Array.isArray(connection.models)) {
+    if (connection.defaultModel && connection.models && Array.isArray(connection.models) && connection.models.length > 0) {
       const modelIds = connection.models.map(m => typeof m === 'string' ? m : m.id);
       if (!modelIds.includes(connection.defaultModel)) {
         // Reset to first available model in the list
@@ -1371,23 +1371,114 @@ function migrateOpus45ToOpus46(config: StoredConfig): boolean {
 
     // Migrate models array
     if (connection.models && Array.isArray(connection.models)) {
-      for (let i = 0; i < connection.models.length; i++) {
-        const model = connection.models[i];
-        if (typeof model === 'string' && model === OPUS_45_ID) {
-          connection.models[i] = OPUS_46_ID;
-          changed = true;
-        } else if (typeof model === 'object' && model.id === OPUS_45_ID) {
-          model.id = OPUS_46_ID;
-          if (model.name?.includes('4.5')) {
-            model.name = model.name.replace('4.5', '4.6');
+      const hasNew = connection.models.some(m =>
+        (typeof m === 'string' ? m : m.id) === OPUS_46_ID
+      );
+
+      if (hasNew) {
+        // New model already exists — just remove the old entry to avoid duplicates
+        const before = connection.models.length;
+        connection.models = connection.models.filter(m =>
+          (typeof m === 'string' ? m : m.id) !== OPUS_45_ID
+        );
+        if (connection.models.length !== before) changed = true;
+      } else {
+        // New model doesn't exist — rename the old entry in place
+        for (let i = 0; i < connection.models.length; i++) {
+          const model = connection.models[i];
+          if (typeof model === 'string' && model === OPUS_45_ID) {
+            connection.models[i] = OPUS_46_ID;
+            changed = true;
+          } else if (typeof model === 'object' && model.id === OPUS_45_ID) {
+            model.id = OPUS_46_ID;
+            if (model.name?.includes('4.5')) {
+              model.name = model.name.replace('4.5', '4.6');
+            }
+            changed = true;
           }
-          changed = true;
         }
       }
     }
   }
 
   return changed;
+}
+
+/**
+ * Migrate Sonnet 4.5 to Sonnet 4.6 for direct Anthropic connections.
+ * Same pattern as migrateOpus45ToOpus46 — updates stored model IDs and names.
+ */
+function migrateSonnet45ToSonnet46(config: StoredConfig): boolean {
+  if (!config.llmConnections) return false;
+
+  const SONNET_45_ID = 'claude-sonnet-4-5-20250929';
+  const SONNET_46_ID = 'claude-sonnet-4-6';
+
+  let changed = false;
+
+  for (const connection of config.llmConnections) {
+    // Only migrate direct Anthropic connections (not compat/third-party)
+    if (connection.providerType !== 'anthropic') continue;
+
+    // Migrate defaultModel
+    if (connection.defaultModel === SONNET_45_ID) {
+      connection.defaultModel = SONNET_46_ID;
+      changed = true;
+    }
+
+    // Migrate models array
+    if (connection.models && Array.isArray(connection.models)) {
+      const hasNew = connection.models.some(m =>
+        (typeof m === 'string' ? m : m.id) === SONNET_46_ID
+      );
+
+      if (hasNew) {
+        // New model already exists — just remove the old entry to avoid duplicates
+        const before = connection.models.length;
+        connection.models = connection.models.filter(m =>
+          (typeof m === 'string' ? m : m.id) !== SONNET_45_ID
+        );
+        if (connection.models.length !== before) changed = true;
+      } else {
+        // New model doesn't exist — rename the old entry in place
+        for (let i = 0; i < connection.models.length; i++) {
+          const model = connection.models[i];
+          if (typeof model === 'string' && model === SONNET_45_ID) {
+            connection.models[i] = SONNET_46_ID;
+            changed = true;
+          } else if (typeof model === 'object' && model.id === SONNET_45_ID) {
+            model.id = SONNET_46_ID;
+            if (model.name?.includes('4.5')) {
+              model.name = model.name.replace('4.5', '4.6');
+            }
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
+ * Migrate Sonnet 4.5 to Sonnet 4.6 in workspace default models.
+ */
+function migrateWorkspaceSonnet45ToSonnet46(config: StoredConfig): void {
+  if (!config.workspaces) return;
+
+  const SONNET_45_ID = 'claude-sonnet-4-5-20250929';
+  const SONNET_46_ID = 'claude-sonnet-4-6';
+
+  for (const workspace of config.workspaces) {
+    const wsConfig = loadWorkspaceConfig(workspace.rootPath);
+    if (!wsConfig?.defaults?.model) continue;
+
+    if (wsConfig.defaults.model === SONNET_45_ID) {
+      wsConfig.defaults.model = SONNET_46_ID;
+      saveWorkspaceConfig(workspace.rootPath, wsConfig);
+    }
+  }
 }
 
 /**
@@ -1575,6 +1666,12 @@ export function migrateLegacyLlmConnectionsConfig(): void {
     }
     // Phase 1e: Migrate Opus 4.5 → Opus 4.6 in workspace default models
     migrateWorkspaceOpus45ToOpus46(config);
+    // Phase 1f: Migrate Sonnet 4.5 → Sonnet 4.6 for direct Anthropic connections
+    if (migrateSonnet45ToSonnet46(config)) {
+      needsSave = true;
+    }
+    // Phase 1g: Migrate Sonnet 4.5 → Sonnet 4.6 in workspace default models
+    migrateWorkspaceSonnet45ToSonnet46(config);
 
     if (needsSave) {
       saveConfig(config);
@@ -2036,7 +2133,7 @@ import { copyFileSync } from 'fs';
 const TOOL_ICONS_DIR_NAME = 'tool-icons';
 
 /**
- * Returns the path to the tool-icons directory: ~/.ws-workspace/tool-icons/
+ * Returns the path to the tool-icons directory: ~/.craft-agent/tool-icons/
  */
 export function getToolIconsDir(): string {
   return join(CONFIG_DIR, TOOL_ICONS_DIR_NAME);

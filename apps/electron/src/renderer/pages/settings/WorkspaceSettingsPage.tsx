@@ -20,10 +20,10 @@ import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { routes } from '@/lib/navigate'
-import { Spinner } from '@ws-workspace/ui'
+import { Spinner } from '@craft-agent/ui'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import type { PermissionMode, WorkspaceSettings, LoadedSource } from '../../../shared/types'
-import { PERMISSION_MODE_CONFIG } from '@ws-workspace/shared/agent/mode-types'
+import { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/mode-types'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 
@@ -145,7 +145,8 @@ export default function WorkspaceSettingsPage() {
   // Subscribe to live source changes (additions/removals)
   useEffect(() => {
     if (!window.electronAPI) return
-    const cleanup = window.electronAPI.onSourcesChanged((sources: LoadedSource[]) => {
+    const cleanup = window.electronAPI.onSourcesChanged((workspaceId: string, sources: LoadedSource[]) => {
+      if (workspaceId !== activeWorkspaceId) return
       setAvailableSources(sources)
       // Auto-heal: remove slugs for sources that no longer exist
       const validSlugs = new Set(sources.map(s => s.config.slug))

@@ -41,7 +41,7 @@ export type McpClientConfig = HttpMcpClientConfig | StdioMcpClientConfig;
  * If you add a new entry here, update it there too.
  */
 const BLOCKED_ENV_VARS = [
-  // WS Workspace auth (set by the app itself)
+  // Craft Agent auth (set by the app itself)
   'ANTHROPIC_API_KEY',
   'CLAUDE_CODE_OAUTH_TOKEN',
 
@@ -59,6 +59,16 @@ const BLOCKED_ENV_VARS = [
   'NPM_TOKEN',
 ];
 
+/**
+ * Interface for clients managed by McpClientPool.
+ * Both CraftMcpClient (remote MCP sources) and ApiSourcePoolClient (API sources) implement this.
+ */
+export interface PoolClient {
+  listTools(): Promise<Tool[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  close(): Promise<void>;
+}
+
 export class CraftMcpClient {
   private client: Client;
   private transport: Transport;
@@ -66,7 +76,7 @@ export class CraftMcpClient {
 
   constructor(config: McpClientConfig) {
     this.client = new Client({
-      name: 'ws-workspace',
+      name: 'craft-agent',
       version: '1.0.0',
     });
 

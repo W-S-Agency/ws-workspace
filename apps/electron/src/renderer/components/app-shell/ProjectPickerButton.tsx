@@ -10,7 +10,7 @@ import {
   StyledDropdownMenuSubContent,
 } from "@/components/ui/styled-dropdown"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@ws-workspace/ui"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
 import type { Project } from "@shared/types"
 
 interface ProjectPickerButtonProps {
