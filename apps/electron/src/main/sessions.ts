@@ -1,5 +1,9 @@
 import { app, nativeImage } from 'electron'
-import * as Sentry from '@sentry/electron/main'
+// Dynamic import — @sentry/electron crashes at module scope in dev mode
+const Sentry: any = (() => {
+  try { return require('@sentry/electron/main') }
+  catch { return { captureException() {}, captureMessage() {}, setTag() {} } }
+})()
 import { basename, join, normalize, isAbsolute, sep } from 'path'
 import { existsSync } from 'fs'
 import { appendFile, readFile, writeFile, mkdir, realpath } from 'fs/promises'

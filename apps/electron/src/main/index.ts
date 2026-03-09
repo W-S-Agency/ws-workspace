@@ -6,62 +6,49 @@ loadShellEnv()
 import { app, BrowserWindow } from 'electron'
 import { createHash } from 'crypto'
 import { hostname, homedir } from 'os'
-import * as Sentry from '@sentry/electron/main'
-
-// Initialize Sentry error tracking as early as possible after app import.
-// Only enabled in production (packaged) builds to avoid noise during development.
-// DSN is baked in at build time via esbuild --define (same pattern as OAuth secrets).
-//
-// NOTE: Source map upload is intentionally disabled. Stack traces in Sentry will show
-// bundled/minified code. To enable source map upload in the future:
-//   1. Add SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT to CI secrets
-//   2. Re-enable the @sentry/vite-plugin in vite.config.ts (handles renderer maps)
-//   3. Add @sentry/esbuild-plugin to scripts/electron-build-main.ts (handles main process maps)
-Sentry.init({
-  dsn: process.env.SENTRY_ELECTRON_INGEST_URL,
-  environment: app.isPackaged ? 'production' : 'development',
-  release: app.getVersion(),
-  // Enabled whenever the ingest URL is available — works in both production (baked via CI)
-  // and development (injected via .env / 1Password). Filter by environment in Sentry dashboard.
-  enabled: !!process.env.SENTRY_ELECTRON_INGEST_URL,
-
-  // Scrub sensitive data before sending to Sentry.
-  // Removes authorization headers, API keys/tokens, and credential-like values.
-  beforeSend(event) {
-    // Scrub request headers (authorization, cookies)
-    if (event.request?.headers) {
-      const sensitiveHeaders = ['authorization', 'cookie', 'x-api-key']
-      for (const header of sensitiveHeaders) {
-        if (event.request.headers[header]) {
-          event.request.headers[header] = '[REDACTED]'
+// Sentry error tracking — loaded dynamically to avoid crash in dev mode.
+// @sentry/electron/main calls electron.app.getAppPath() at module scope,
+// which fails when running via esbuild dev server (not packaged).
+const SentryNoOp = { init() {}, setUser() {}, setTag() {}, captureException() {}, captureMessage() {} }
+let Sentry: typeof import('@sentry/electron/main') = SentryNoOp as any
+try {
+  Sentry = require('@sentry/electron/main')
+  Sentry.init({
+    dsn: process.env.SENTRY_ELECTRON_INGEST_URL,
+    environment: app.isPackaged ? 'production' : 'development',
+    release: app.getVersion(),
+    enabled: !!process.env.SENTRY_ELECTRON_INGEST_URL,
+    beforeSend(event) {
+      if (event.request?.headers) {
+        const sensitiveHeaders = ['authorization', 'cookie', 'x-api-key']
+        for (const header of sensitiveHeaders) {
+          if (event.request.headers[header]) {
+            event.request.headers[header] = '[REDACTED]'
+          }
         }
       }
-    }
-
-    // Scrub breadcrumb data that may contain sensitive values
-    if (event.breadcrumbs) {
-      for (const breadcrumb of event.breadcrumbs) {
-        if (breadcrumb.data) {
-          for (const key of Object.keys(breadcrumb.data)) {
-            const lowerKey = key.toLowerCase()
-            if (lowerKey.includes('token') || lowerKey.includes('key') ||
-                lowerKey.includes('secret') || lowerKey.includes('password') ||
-                lowerKey.includes('credential') || lowerKey.includes('auth')) {
-              breadcrumb.data[key] = '[REDACTED]'
+      if (event.breadcrumbs) {
+        for (const breadcrumb of event.breadcrumbs) {
+          if (breadcrumb.data) {
+            for (const key of Object.keys(breadcrumb.data)) {
+              const lowerKey = key.toLowerCase()
+              if (lowerKey.includes('token') || lowerKey.includes('key') ||
+                  lowerKey.includes('secret') || lowerKey.includes('password') ||
+                  lowerKey.includes('credential') || lowerKey.includes('auth')) {
+                breadcrumb.data[key] = '[REDACTED]'
+              }
             }
           }
         }
       }
-    }
-
-    return event
-  },
-})
-
-// Set anonymous machine ID for Sentry user tracking (no PII — just a hash).
-// Uses hostname + homedir to produce a stable per-machine identifier.
-const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
-Sentry.setUser({ id: machineId })
+      return event
+    },
+  })
+  const machineId = createHash('sha256').update(hostname() + homedir()).digest('hex').slice(0, 16)
+  Sentry.setUser({ id: machineId })
+} catch {
+  console.warn('⚠️  Sentry not available (expected in dev mode)')
+}
 
 import { join, delimiter } from 'path'
 import { existsSync } from 'fs'
@@ -159,6 +146,14 @@ let pendingDeepLink: string | null = null
 // Supports multi-instance dev: CRAFT_APP_NAME env var (e.g., "Craft Agents [1]")
 app.setName(process.env.CRAFT_APP_NAME || 'Craft Agents')
 
+// Isolate dev instance userData to prevent conflicts with production app.
+// This separates Electron internals (GPU cache, window state, session storage)
+// while still sharing workspace config from ~/.craft-agent/
+if (!app.isPackaged) {
+  const devUserData = join(app.getPath('userData'), '-dev')
+  app.setPath('userData', devUserData)
+}
+
 // Register as default protocol client for craftagents:// URLs
 // This must be done before app.whenReady() on some platforms
 if (process.defaultApp) {
@@ -191,7 +186,8 @@ app.on('open-url', (event, url) => {
 })
 
 // Handle deeplink on Windows/Linux (single instance check)
-const gotTheLock = app.requestSingleInstanceLock()
+// Skip lock in dev mode — allows running alongside production app
+const gotTheLock = app.isPackaged ? app.requestSingleInstanceLock() : true
 if (!gotTheLock) {
   app.quit()
 } else {
