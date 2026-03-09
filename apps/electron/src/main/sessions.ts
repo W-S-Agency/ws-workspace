@@ -3848,9 +3848,45 @@ export class SessionManager {
           this.onProcessingStopped(sessionId, 'interrupted')
         }
       } else {
+        const errorMsg = error instanceof Error ? error.message : String(error)
         sessionLog.error('Error in chat:', error)
-        sessionLog.error('Error message:', error instanceof Error ? error.message : String(error))
+        sessionLog.error('Error message:', errorMsg)
         sessionLog.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
+
+        // ENOTCONN / connection errors on session restore: destroy agent, clear SDK session, retry fresh.
+        // This handles cases where the SDK subprocess died or the session expired between app restarts.
+        const isConnectionError = errorMsg.includes('ENOTCONN') ||
+          errorMsg.includes('stdin not writable') ||
+          errorMsg.includes('EPIPE') ||
+          errorMsg.includes('ECONNRESET')
+        const hasResumableSession = !!managed.sdkSessionId
+
+        if (isConnectionError && hasResumableSession && !_isAuthRetry) {
+          sessionLog.warn(`Connection error during session restore (${errorMsg}), clearing agent and retrying fresh`)
+          // Destroy the broken agent
+          if (managed.agent) {
+            try { managed.agent.destroy() } catch { /* ignore cleanup errors */ }
+            managed.agent = null as unknown as AgentInstance
+          }
+          // Clear SDK session ID so next attempt starts fresh
+          managed.sdkSessionId = undefined
+          managed.isProcessing = false
+          this.persistSession(managed)
+
+          // Notify user and retry
+          this.sendEvent({
+            type: 'info',
+            sessionId,
+            message: 'Reconnecting session...',
+          }, managed.workspace.id)
+
+          sendSpan.mark('chat.enotconn_retry')
+          sendSpan.end()
+
+          // Retry with fresh agent (pass _isAuthRetry=true to prevent infinite loop)
+          await this.sendMessage(sessionId, message, attachments, storedAttachments, options, existingMessageId, true)
+          return
+        }
 
         // Report chat/SDK errors to Sentry for crash tracking
         getSentry().captureException(error, {
@@ -3858,12 +3894,12 @@ export class SessionManager {
         })
 
         sendSpan.mark('chat.error')
-        sendSpan.setMetadata('error', error instanceof Error ? error.message : String(error))
+        sendSpan.setMetadata('error', errorMsg)
         sendSpan.end()
         this.sendEvent({
           type: 'error',
           sessionId,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: errorMsg
         }, managed.workspace.id)
         // Handle error via centralized handler
         this.onProcessingStopped(sessionId, 'error')

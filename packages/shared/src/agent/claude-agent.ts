@@ -1453,6 +1453,25 @@ export class ClaudeAgent extends BaseAgent {
           return;
         }
 
+        // ENOTCONN / EPIPE: subprocess socket died (e.g., after app restart with stale session).
+        // Treat as recoverable by clearing session and retrying fresh.
+        const isConnectionError =
+          errorMsg.includes('enotconn') ||
+          errorMsg.includes('epipe') ||
+          errorMsg.includes('econnreset') ||
+          errorMsg.includes('stdin not writable');
+
+        if (isConnectionError && wasResuming && !_isRetry) {
+          debug('[ClaudeAgent] Connection error during resume, clearing session and retrying fresh');
+          this.sessionId = null;
+          this.config.onSdkSessionIdCleared?.();
+          this.pinnedPreferencesPrompt = null;
+          this.preferencesDriftNotified = false;
+          yield { type: 'info', message: 'Connection lost, reconnecting...' };
+          yield* this.chat(userMessage, attachments, { isRetry: true });
+          return;
+        }
+
         // Check for SDK process errors - these often wrap underlying billing/auth issues
         // The SDK's internal Claude Code process exits with code 1 for various API errors
         const isProcessError = errorMsg.includes('process exited with code');
