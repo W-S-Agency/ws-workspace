@@ -1,165 +1,184 @@
-# Known Issues - Upstream Merge v0.7.1
+# Known Issues - WS Workspace v0.7.1 Fork
 
-**Date:** 2026-03-08
+**Last updated:** 2026-03-09
 **Branch:** `merge-upstream-v0.7.1`
-**Status:** Partial Success (Main process ✅, Renderer ❌)
+**Base:** upstream `lukilabs/craft-agents-oss` v0.7.1
 
 ---
 
-## ✅ What Works
+## Architecture Overview
 
-- **Merge completed:** upstream v0.7.1 successfully merged
-- **Branding updated:** All WS Workspace branding applied
-- **Main process:** Builds successfully (35.2 MB)
-- **Preload scripts:** Build successfully
-- **Session MCP server:** Builds successfully (4.1 MB)
-- **Pi Agent server:** Builds successfully (15.26 MB) after dependency fixes
-- **Interceptor:** Builds successfully
+```
+ws-workspace-product/          (monorepo root, dev repo)
+  app/                         (git submodule -> W-S-Agency/ws-workspace)
+    apps/electron/             (Electron app)
+    packages/shared/           (shared agent logic, options, pi-agent)
+    packages/ui/               (React UI components)
+    packages/server-core/      (headless server)
+    packages/pi-agent-server/  (Pi SDK subprocess)
+    scripts/                   (build scripts)
+```
 
-## ❌ What Doesn't Work
-
-### Renderer Build Failure
-
-**Error:** Vite cannot resolve imports from workspace packages when using Bun
-
-**Affected imports:**
-- `@tiptap/core` and all `@tiptap/*` extensions
-- Any package imported from `@craft-agent/ui` workspace package
-
-**Root cause:**
-- Bun stores packages in `.bun/package@version/node_modules/package/`
-- Vite expects packages in `node_modules/package/`
-- Workspace package imports (`@craft-agent/ui`) cannot resolve their dependencies
+**Repos:**
+- Dev: `W-S-Agency/ws-workspace-product` (this repo)
+- App: `W-S-Agency/ws-workspace` (submodule, fork of craft-agents-oss)
+- Upstream: `lukilabs/craft-agents-oss`
 
 ---
 
-## 🐛 Upstream Bugs Fixed
+## Windows Fixes Applied
 
-The following dependencies were **missing** in upstream `lukilabs/craft-agents-oss` v0.7.1:
+### 1. Bun -> Node.js Switch (CRITICAL)
 
-### packages/pi-agent-server/package.json
-```json
-{
-  "dependencies": {
-    "@sinclair/typebox": "^0.34.0",  // MISSING in upstream
-    "turndown": "^7.2.0",            // MISSING in upstream
-    "node-html-parser": "^7.0.0",    // MISSING in upstream
-    "pdfjs-dist": "^4.9.246"         // MISSING in upstream
-  }
-}
-```
+**Problem:** Upstream uses Bun for SDK subprocess. Bun's libuv on Windows has a bug
+(oven-sh/bun#23432, #23520) where `fs.open()` fails with `ENOTCONN: socket is not
+connected`. This breaks Read, Write, Bash tools — the app is completely unusable.
 
-### packages/shared/package.json
-```json
-{
-  "dependencies": {
-    "@mariozechner/pi-ai": "^0.56.2", // MISSING in upstream
-    "glob": "^11.0.0"                  // MISSING in upstream
-  }
-}
-```
+Additionally, Bun's `fs.existsSync` fails on paths with spaces (e.g., `C:\Program Files\Git\bin\bash.exe`),
+causing SDK to crash with "unable to find CLAUDE_CODE_GIT_BASH_PATH".
 
-### packages/server-core/package.json
-```json
-{
-  "dependencies": {
-    "@mariozechner/pi-ai": "^0.56.2"  // MISSING in upstream
-  }
-}
-```
+**Fix:** `packages/shared/src/agent/options.ts`
+- On Windows: use `process.execPath` (Electron's embedded Node.js 22.x) with `ELECTRON_RUN_AS_NODE=1`
+- Load `cjs-compat-preload.cjs` via `--require` (polyfills `global.require` for ESM bundles)
+- Patch SDK `package.json` to remove `"type": "module"` (so Node.js treats cli.js as CJS)
+- Auto-detect `CLAUDE_CODE_GIT_BASH_PATH` and Git PATH dirs
+- Set `ComSpec` to `cmd.exe`, remove MSYS-style `SHELL` env var
+- Non-Windows continues to use Bun as before
 
-**Impact:** Code uses these packages but they're not declared in package.json.
-**Our fix:** Added all missing dependencies manually.
-**TODO:** Create PR to upstream with these fixes.
+**Files:**
+- `packages/shared/src/agent/options.ts` — main fix
+- `packages/shared/src/cjs-compat-preload.cjs` — `global.require = require` polyfill
+- `packages/shared/src/agent/backend/internal/runtime-resolver.ts` — SDK package.json patch
+- `apps/electron/scripts/afterPack.cjs` — production build SDK patch
+- `apps/electron/scripts/copy-assets.ts` — asset copying for interceptor/preload
+- `apps/electron/electron-builder.yml` — includes `cjs-compat-preload.cjs` in package
+
+**Commit:** `611c6bd` (cherry-picked from `42b123f` on `merge-upstream-v0.6.0`)
+
+### 2. ENOTCONN Session Recovery (Defense-in-Depth)
+
+**Problem:** Even with the Bun->Node.js fix, subprocess pipe errors can occur in edge cases.
+When a session is restored after app restart, the SDK subprocess may not be ready, causing
+ENOTCONN/EPIPE errors that silently break the session.
+
+**Fix:** Three-layer recovery:
+1. `pi-agent.ts` — `send()` throws instead of silently returning when stdin not writable
+2. `claude-agent.ts` — Inner catch detects pipe errors (ENOTCONN/EPIPE/ECONNRESET/stdin not writable),
+   clears session, and retries with fresh subprocess
+3. `sessions.ts` — Outer catch in `sendMessage()` destroys broken agent and recreates from scratch
+
+**Files:**
+- `packages/shared/src/agent/pi-agent.ts`
+- `packages/shared/src/agent/claude-agent.ts`
+- `apps/electron/src/main/sessions.ts`
+
+**Commit:** `ec1f870` (cherry-picked from `43bcbd2` on `merge-upstream-v0.6.0`)
+
+### 3. Electron Dev Mode Crashes
+
+**Problem:** Several packages crash at module scope when bundled by esbuild:
+- `@sentry/electron` / `@sentry/electron/main` — calls `app.getAppPath()` at require time
+- `electron-updater` — calls `app.getVersion()` at require time
+- `electron-log` — accesses Electron internals at require time
+- `sharp` — native module, unavailable on Windows dev setup
+
+**Fix:** Add to esbuild `external` array in build scripts.
+v0.7.1 already has a lazy `sentry.ts` wrapper (no need for inline dynamic require).
+
+**Files:**
+- `scripts/electron-build-main.ts` — externals: `@sentry/electron`, `electron-updater`, `electron-log`, `sharp`, `@mariozechner/pi-ai`
+- `scripts/electron-dev.ts` — same externals in both build contexts
+
+**Commit:** `c50328f` (cherry-picked from `f721046` on `merge-upstream-v0.6.0`)
 
 ---
 
-## 🔧 Workarounds Applied
+## Build Issues
 
-### 1. PDF.js Worker (Solved ✅)
+### Pi Agent Server (Non-Fatal)
 
-**Problem:** Vite cannot resolve `pdfjs-dist/build/pdf.worker.min.mjs?url` from Bun's `.bun/` directory
+**Problem:** Missing native dependencies on Windows:
+- `@sinclair/typebox`, `turndown`, `node-html-parser`, `pdfjs-dist` (in pi-agent-server)
+- `@mariozechner/pi-ai`, `glob` (in shared)
+- `gray-matter` (in shared/config/validators)
 
-**Workaround:**
+**Fix:** Build failure is non-fatal (warns and continues). Pi Agent is a macOS/Linux
+feature and not needed on Windows.
+
+### Renderer Build
+
+**Problem:** v0.7.1 added new dependencies (`@tiptap/extension-task-list`, `@tiptap/extension-mathematics`,
+`@tiptap/extension-file-handler`, `@tiptap/extension-image`, `@tiptap/markdown`, `@tiptap/suggestion`)
+that must be properly installed.
+
+**Fix:** Run `bun install` from the **root** workspace (`ws-workspace-product/`), not from `app/`.
+The monorepo hoists packages to `ws-workspace-product/node_modules/.bun/` and symlinks them into `app/node_modules/`.
+
+### PDF.js Worker
+
+**Problem:** Vite cannot resolve `pdfjs-dist/build/pdf.worker.min.mjs?url` from Bun's `.bun/` directory.
+
+**Workaround:** CDN worker URL in `packages/ui/src/components/overlay/PDFPreviewOverlay.tsx`:
 ```typescript
-// packages/ui/src/components/overlay/PDFPreviewOverlay.tsx
-// Use CDN worker instead of local import
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
 ```
 
-**Status:** ✅ Works (but requires internet connection)
+---
 
-### 2. Vite Config Updates
+## Build Instructions (Windows)
 
-**File:** `apps/electron/vite.config.ts`
+```powershell
+# 1. Install from ROOT (not app/)
+cd D:\Claude\ws-workspace-product
+bun install
 
-```typescript
-{
-  resolve: {
-    preserveSymlinks: false,
-    alias: {
-      'pdfjs-dist': resolve(__dirname, '../../node_modules/.bun/pdfjs-dist@4.10.38/node_modules/pdfjs-dist'),
-    }
-  },
-  assetsInclude: ['**/*.mjs']
-}
+# 2. Build
+cd app
+bun run electron:build
+
+# 3. Dev mode
+bun run electron:dev
+
+# 4. Production package (.exe)
+bun run electron:dist:win
 ```
 
----
-
-## 📋 Next Steps
-
-### Option A: Complete Vite Fix (2-3 hours)
-- [ ] Write custom Vite plugin for Bun `.bun/` resolution
-- [ ] Add aliases for all `@tiptap/*` packages
-- [ ] Test full build
-- [ ] Verify production packaging
-
-### Option B: Switch to npm for builds (30 min)
-- [ ] Keep Bun for dev mode
-- [ ] Use `npm install` for production builds
-- [ ] Update build scripts in `package.json`
-- [ ] Test with npm node_modules structure
-
-### Option C: Wait for upstream/tooling fixes
-- [ ] Create issue in Bun repo about Vite compatibility
-- [ ] Create issue in Vite repo about workspace resolution
-- [ ] Monitor upstream for fixes
-
-### Option D: Simplify (RECOMMENDED)
-- [ ] Remove Tiptap editor from `@craft-agent/ui`
-- [ ] Use simpler markdown editor
-- [ ] Fewer workspace dependencies = fewer resolution issues
+**Important:**
+- Always `bun install` from root workspace (esbuild, vite are root deps)
+- Pi Agent Server failure is expected on Windows (non-fatal)
+- `tsconfig.base.json` warning is cosmetic (non-blocking)
 
 ---
 
-## 🎯 Immediate Actions
+## Environment Requirements
 
-1. **Create upstream PR** with dependency fixes
-   - Repository: `lukilabs/craft-agents-oss`
-   - Title: "fix: add missing dependencies in v0.7.1 packages"
-   - Include all package.json changes
-
-2. **Test what works:**
-   - Try `npm run electron:dev` (dev mode)
-   - Check if main process + UI loads
-   - Verify MCP servers connect
-
-3. **Document in CLAUDE.md:**
-   - Known issue: Renderer build requires npm instead of Bun
-   - Workaround: Use dev mode or switch to npm
+- **Node.js:** v22.x (via nvm4w)
+- **Bun:** v1.3.9+
+- **Git:** 2.53+ with `bash.exe` in `Git\bin\`
+- **Electron:** v39.x (installed via npm)
+- **Python:** 3.x (for Pi agent server, optional on Windows)
+- **Env variable:** `CLAUDE_CODE_GIT_BASH_PATH` (set by app, no manual config needed in fork)
 
 ---
 
-## 📝 Timeline
+## Upstream Bugs to Report
 
-**Time spent:** ~2.5 hours
-**Date:** 2026-03-08 06:00-08:30 GMT+1
+1. **Missing dependencies in v0.7.1** — multiple packages not declared in package.json
+2. **Windows: Bun ENOTCONN** — `fs.open()` fails, making app unusable
+3. **Windows: Git Bash path with spaces** — `fs.existsSync` fails for `C:\Program Files\...`
+4. **Windows: SHELL env override** — MSYS-style `/usr/bin/bash` breaks Bun's execSync
 
-**Commits:**
-- `609d6e6` - Merge upstream v0.7.1
-- `5d086ab` - Apply WS Workspace branding
-- `3dedbf1` - Fix missing dependencies and workarounds
+---
 
-**Branch:** `merge-upstream-v0.7.1`
-**Remote:** https://github.com/W-S-Agency/ws-workspace/tree/merge-upstream-v0.7.1
+## Commit History
+
+```
+611c6bd fix: switch Windows SDK subprocess from Bun to Node.js (ENOTCONN root cause)
+ec1f870 fix: add ENOTCONN session recovery for restored sessions
+c50328f fix: resolve Electron dev mode runtime crashes
+675ba49 docs: add KNOWN_ISSUES.md for upstream merge
+3dedbf1 fix: add missing upstream dependencies and build workarounds
+5d086ab chore: apply WS Workspace branding
+609d6e6 merge: upstream v0.7.1 from lukilabs/craft-agents-oss
+56fdf95 v0.7.1
+```
