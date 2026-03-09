@@ -611,7 +611,7 @@ export class PiAgent extends BaseAgent {
   private send(cmd: Record<string, unknown>): void {
     if (!this.subprocess?.stdin?.writable) {
       this.debug('Cannot send to subprocess: stdin not writable');
-      return;
+      throw new Error('Pi subprocess stdin not writable (ENOTCONN). Subprocess may have exited.');
     }
     const line = JSON.stringify(cmd);
     this.subprocess.stdin.write(line + '\n');
