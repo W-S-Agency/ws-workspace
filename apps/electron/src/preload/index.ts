@@ -612,6 +612,11 @@ const api: ElectronAPI = {
   getAutomationLastExecuted: (workspaceId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, workspaceId) as Promise<Record<string, number>>,
 
+  // Agency repos (shared skills & memory)
+  getAgencyRepoStatus: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_STATUS, repoId),
+  importAgencyRepo: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_IMPORT, repoId),
+  updateAgencyRepo: (repoId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENCY_REPO_UPDATE, repoId),
+
   // Automations change listener (live updates when automations.json changes on disk)
   onAutomationsChanged: (callback: (workspaceId: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, workspaceId: string) => {

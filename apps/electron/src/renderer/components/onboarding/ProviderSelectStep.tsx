@@ -72,7 +72,7 @@ export function ProviderSelectStep({ onSelect }: ProviderSelectStepProps) {
           <CraftAgentsSymbol className="size-10 text-accent" />
         </div>
       }
-      title="Welcome to Craft Agents"
+      title="Welcome to WS Workspace"
       description="How would you like to connect?"
     >
       <div className="space-y-3">

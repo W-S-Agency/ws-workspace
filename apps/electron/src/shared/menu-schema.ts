@@ -234,6 +234,7 @@ const SETTINGS_ICONS: Record<SettingsSubpage, string> = {
   permissions: 'ShieldCheck',
   labels: 'Tag',
   shortcuts: 'Keyboard',
+  agency: 'Building2',
   preferences: 'UserCircle',
 }
 

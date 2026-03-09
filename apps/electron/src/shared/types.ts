@@ -928,7 +928,20 @@ export const IPC_CHANNELS = {
   AUTOMATIONS_GET_HISTORY: 'automations:getHistory',
   AUTOMATIONS_GET_LAST_EXECUTED: 'automations:getLastExecuted',
   AUTOMATIONS_CHANGED: 'automations:changed',  // Broadcast event
+
+  // Agency repos (shared skills & memory)
+  AGENCY_REPO_STATUS: 'agency:repoStatus',
+  AGENCY_REPO_IMPORT: 'agency:repoImport',
+  AGENCY_REPO_UPDATE: 'agency:repoUpdate',
 } as const
+
+/** Agency repo status (for shared skills/memory import) */
+export interface AgencyRepoStatus {
+  imported: boolean
+  path?: string
+  lastUpdated?: string
+  error?: string
+}
 
 // Re-import types for ElectronAPI
 import type { Workspace, SessionMetadata, StoredAttachment as StoredAttachmentType } from '@craft-agent/core/types';
@@ -1312,6 +1325,11 @@ export interface ElectronAPI {
 
   // Automations change listener (live updates when automations.json changes on disk)
   onAutomationsChanged(callback: (workspaceId: string) => void): () => void
+
+  // Agency repos (shared skills & memory)
+  getAgencyRepoStatus(repoId: string): Promise<AgencyRepoStatus>
+  importAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
+  updateAgencyRepo(repoId: string): Promise<{ success: boolean; error?: string }>
 }
 
 /**

@@ -3416,4 +3416,59 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     })
   }
 
+  // ─── Agency repos (shared skills & memory) ────────────────────────────────
+
+  const AGENCY_REPOS: Record<string, { repo: string; dir: string }> = {
+    'skills-library': { repo: 'https://github.com/W-S-Agency/skills-library.git', dir: 'skills-library' },
+    'agency-memory': { repo: 'https://github.com/W-S-Agency/agency-memory.git', dir: 'agency-memory' },
+  }
+
+  const getAgencyDir = () => join(homedir(), '.ws-workspace', 'agency')
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_STATUS, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { imported: false, error: 'Unknown repo' }
+
+    const repoPath = join(getAgencyDir(), config.dir)
+    if (!existsSync(repoPath)) return { imported: false }
+
+    try {
+      const gitLog = execSync('git log -1 --format=%cI', { cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+      return { imported: true, path: repoPath, lastUpdated: gitLog }
+    } catch {
+      return { imported: true, path: repoPath }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_IMPORT, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { success: false, error: 'Unknown repo' }
+
+    const agencyDir = getAgencyDir()
+    const repoPath = join(agencyDir, config.dir)
+
+    try {
+      if (!existsSync(agencyDir)) mkdirSync(agencyDir, { recursive: true })
+      execSync(`git clone "${config.repo}" "${repoPath}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Clone failed' }
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.AGENCY_REPO_UPDATE, async (_event, repoId: string) => {
+    const config = AGENCY_REPOS[repoId]
+    if (!config) return { success: false, error: 'Unknown repo' }
+
+    const repoPath = join(getAgencyDir(), config.dir)
+    if (!existsSync(repoPath)) return { success: false, error: 'Repo not imported' }
+
+    try {
+      execSync('git pull --ff-only', { cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Pull failed' }
+    }
+  })
+
 }

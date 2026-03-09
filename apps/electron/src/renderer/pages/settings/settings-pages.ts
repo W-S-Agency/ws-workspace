@@ -22,6 +22,7 @@ import WorkspaceSettingsPage from './WorkspaceSettingsPage'
 import PermissionsSettingsPage from './PermissionsSettingsPage'
 import LabelsSettingsPage from './LabelsSettingsPage'
 import ShortcutsPage from './ShortcutsPage'
+import AgencySettingsPage from './AgencySettingsPage'
 import PreferencesPage from './PreferencesPage'
 
 /**
@@ -37,6 +38,7 @@ export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = 
   permissions: PermissionsSettingsPage,
   labels: LabelsSettingsPage,
   shortcuts: ShortcutsPage,
+  agency: AgencySettingsPage,
   preferences: PreferencesPage,
 }
 
