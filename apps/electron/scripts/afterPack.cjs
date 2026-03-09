@@ -19,7 +19,25 @@ const path = require('path');
 const fs = require('fs');
 
 module.exports = async function afterPack(context) {
-  // Only process macOS builds
+  // Windows: patch SDK package.json to remove "type": "module" so Node.js treats cli.js as CJS.
+  // On Windows, we use Electron's Node.js instead of Bun (to avoid Bun's ENOTCONN bug).
+  // Bun allows require() in ESM; Node.js does not. cli.js uses require() throughout.
+  if (context.electronPlatformName === 'win32') {
+    const sdkPkgPath = path.join(context.appOutDir, 'resources', 'app',
+      'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'package.json');
+    try {
+      const sdkPkg = JSON.parse(fs.readFileSync(sdkPkgPath, 'utf-8'));
+      if (sdkPkg.type === 'module') {
+        delete sdkPkg.type;
+        fs.writeFileSync(sdkPkgPath, JSON.stringify(sdkPkg, null, 2) + '\n', 'utf-8');
+        console.log('afterPack: Patched SDK package.json (removed "type": "module" for Node.js CJS compat)');
+      }
+    } catch (err) {
+      console.log(`afterPack: SDK package.json patch skipped: ${err.message}`);
+    }
+  }
+
+  // Only process macOS builds for Liquid Glass icon
   if (context.electronPlatformName !== 'darwin') {
     console.log('Skipping Liquid Glass icon (not macOS)');
     return;

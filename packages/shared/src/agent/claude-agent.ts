@@ -1456,20 +1456,26 @@ export class ClaudeAgent extends BaseAgent {
           return;
         }
 
-        // ENOTCONN / EPIPE: subprocess socket died (e.g., after app restart with stale session).
-        // Treat as recoverable by clearing session and retrying fresh.
-        const isConnectionError =
+        // Check for subprocess pipe/connection errors (ENOTCONN, EPIPE, etc.)
+        // These occur when the SDK subprocess crashes mid-execution or its stdio pipes break.
+        // On Windows, Bun/libuv can produce ENOTCONN when spawning child processes fails
+        // due to pipe state corruption (see oven-sh/bun#23344, #23520).
+        // Recovery: clear session and retry with a fresh subprocess.
+        const isSubprocessPipeError =
           errorMsg.includes('enotconn') ||
           errorMsg.includes('epipe') ||
           errorMsg.includes('econnreset') ||
-          errorMsg.includes('stdin not writable');
+          errorMsg.includes('stdin not writable') ||
+          errorMsg.includes('failed to write to process stdin') ||
+          errorMsg.includes('cannot write to terminated process') ||
+          errorMsg.includes('processtransport is not ready');
 
-        if (isConnectionError && wasResuming && !_isRetry) {
-          debug('[ClaudeAgent] Connection error during resume, clearing session and retrying fresh');
+        if (isSubprocessPipeError && !_isRetry) {
+          debug('[ClaudeAgent] Subprocess pipe broken (ENOTCONN/EPIPE), clearing session and retrying...');
           this.sessionId = null;
-          this.config.onSdkSessionIdCleared?.();
           this.pinnedPreferencesPrompt = null;
           this.preferencesDriftNotified = false;
+          this.config.onSdkSessionIdCleared?.();
           yield { type: 'info', message: 'Connection lost, reconnecting...' };
           yield* this.chat(userMessage, attachments, { isRetry: true });
           return;

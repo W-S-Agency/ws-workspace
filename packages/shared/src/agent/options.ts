@@ -198,18 +198,105 @@ export function getDefaultOptions(envOverrides?: Record<string, string>): Partia
 
     // If custom path is set (e.g., for Electron), use it with minimal options
     if (customPathToClaudeCodeExecutable) {
+        // Windows fix: ensure the SDK subprocess can find bash.exe and run cmd.exe.
+        // The SDK uses execSync('dir "path"') to verify bash exists, which needs cmd.exe.
+        // When Electron inherits env from Git Bash/MSYS, SHELL may be '/usr/bin/bash'
+        // (a Unix-style path invalid outside MSYS). Bun's execSync may use SHELL instead
+        // of ComSpec, causing the 'dir' command to fail. Fix by:
+        // 1. Ensuring ComSpec points to cmd.exe
+        // 2. Removing Unix-style SHELL paths
+        // 3. Auto-detecting and setting CLAUDE_CODE_GIT_BASH_PATH if not already set
+        const baseEnv = { ...process.env };
+        if (process.platform === 'win32') {
+            baseEnv.ComSpec = process.env.ComSpec || 'C:\\Windows\\system32\\cmd.exe';
+            // Remove MSYS-style SHELL (e.g., '/usr/bin/bash') — invalid outside MSYS context
+            if (baseEnv.SHELL && !baseEnv.SHELL.includes(':\\')) {
+                delete baseEnv.SHELL;
+            }
+            // Ensure Git/bash are discoverable by the SDK subprocess.
+            // Add Git directories to PATH as a general fallback.
+            const gitDirs = [
+                'C:\\Program Files\\Git\\cmd',   // git.exe lives here
+                'C:\\Program Files\\Git\\bin',   // bash.exe lives here
+                'C:\\Program Files (x86)\\Git\\cmd',
+                'C:\\Program Files (x86)\\Git\\bin',
+            ];
+            for (const dir of gitDirs) {
+                if (existsSync(dir) && baseEnv.PATH && !baseEnv.PATH.includes(dir)) {
+                    baseEnv.PATH = `${dir};${baseEnv.PATH}`;
+                }
+            }
+            // Set CLAUDE_CODE_GIT_BASH_PATH explicitly — the SDK checks this first
+            // and uses existsSync() to verify. Now that "type": "module" is removed
+            // from the SDK package.json, require("fs").existsSync() works correctly.
+            const bashCandidates = [
+                'C:\\Program Files\\Git\\bin\\bash.exe',
+                'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+            ];
+            const bashPath = bashCandidates.find(p => existsSync(p));
+            if (bashPath) {
+                baseEnv.CLAUDE_CODE_GIT_BASH_PATH = bashPath;
+            } else {
+                // If bash not found locally, remove inherited value to avoid process.exit(1)
+                delete baseEnv.CLAUDE_CODE_GIT_BASH_PATH;
+            }
+        }
+
+        // On Windows, use Electron's embedded Node.js instead of Bun to avoid
+        // Bun's ENOTCONN panic on fs.open() operations (oven-sh/bun#23432, #23520).
+        // Bun's libuv on Windows has a persistent bug where file operations fail with
+        // "ENOTCONN: socket is not connected (open())" — affecting Read, Write, Bash tools.
+        // ELECTRON_RUN_AS_NODE=1 makes the Electron binary act as Node.js 22.x.
+        // Node.js doesn't auto-load .env files, so --env-file is not needed.
+        if (process.platform === 'win32') {
+            const nodeExecArgs: string[] = [];
+            // CJS compat: cli.js is an ESM bundle that uses bare require() in some
+            // functions (Bun allows this; Node.js does not). Load a preload that
+            // sets global.require so those calls work under Node.js.
+            const cjsCompat = customPathToClaudeCodeExecutable
+                ? join(dirname(customPathToClaudeCodeExecutable).replace(/node_modules.*/, ''), 'packages', 'shared', 'src', 'cjs-compat-preload.cjs')
+                : null;
+            if (cjsCompat && existsSync(cjsCompat)) {
+                nodeExecArgs.push('--require', cjsCompat);
+            }
+            // Add interceptor preload via --require if available.
+            // If interceptor is pre-compiled .cjs, load directly.
+            // If raw .ts, use --experimental-strip-types (Node 22+).
+            if (customInterceptorPath) {
+                if (customInterceptorPath.endsWith('.cjs') || customInterceptorPath.endsWith('.js')) {
+                    nodeExecArgs.push('--require', customInterceptorPath);
+                } else {
+                    nodeExecArgs.push('--experimental-strip-types', '--require', customInterceptorPath);
+                }
+            }
+
+            return {
+                pathToClaudeCodeExecutable: customPathToClaudeCodeExecutable,
+                executable: process.execPath as 'bun',
+                executableArgs: nodeExecArgs,
+                env: {
+                    ...baseEnv,
+                    ELECTRON_RUN_AS_NODE: '1',
+                    ...envOverrides,
+                    CRAFT_DEBUG: (process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1') ? '1' : '0',
+                }
+            };
+        }
+
+        // Non-Windows: use Bun with --env-file to prevent .env injection
         const executableArgs = [envFileFlag];
         // Add interceptor preload if path is set (needed for cache TTL patching)
         if (customInterceptorPath) {
             executableArgs.push('--preload', customInterceptorPath);
         }
+
         return {
             pathToClaudeCodeExecutable: customPathToClaudeCodeExecutable,
             // Use custom executable if set, otherwise default to 'bun'
             executable: (customExecutable || 'bun') as 'bun',
             executableArgs,
             env: {
-                ...process.env,
+                ...baseEnv,
                 ...envOverrides,
                 // Propagate debug mode from argv flag OR existing env var
                 CRAFT_DEBUG: (process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1') ? '1' : '0',

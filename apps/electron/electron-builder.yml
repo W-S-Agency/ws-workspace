@@ -28,6 +28,8 @@ files:
   - packages/shared/src/interceptor-common.ts
   - packages/shared/src/feature-flags.ts
   - packages/shared/src/interceptor-request-utils.ts
+  # CJS compat preload: polyfills global.require for Node.js ESM context (Windows)
+  - packages/shared/src/cjs-compat-preload.cjs
   # Include CLI tool Python scripts (platform-independent)
   - resources/scripts/**/*
   # Include CLI tool shell wrappers (platform-independent, both Unix and Windows)
