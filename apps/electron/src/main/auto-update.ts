@@ -14,7 +14,6 @@
  * quitAndInstall() handles restart natively — no external scripts.
  */
 
-import { autoUpdater } from 'electron-updater'
 import { app } from 'electron'
 import { platform } from 'os'
 import * as path from 'path'
@@ -28,6 +27,9 @@ import {
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
 import { RPC_CHANNELS, type UpdateInfo } from '../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
+
+// Lazy-loaded to avoid crash in dev mode (electron-updater accesses app.getVersion() at import time)
+let autoUpdater: import('electron-updater').AppUpdater | null = null
 
 // Platform detection
 const PLATFORM = platform()
@@ -109,116 +111,81 @@ function broadcastDownloadProgress(progress: number): void {
   eventSink(RPC_CHANNELS.update.DOWNLOAD_PROGRESS, { to: 'all' }, progress)
 }
 
-// ─── Configure electron-updater ───────────────────────────────────────────────
+// ─── Lazy initialization (deferred to avoid crash in dev mode) ────────────────
 
-// Auto-download updates in the background after detection
-autoUpdater.autoDownload = true
+let _updaterInitialized = false
 
-// Install on app quit (if update is downloaded but user hasn't clicked "Restart")
-autoUpdater.autoInstallOnAppQuit = true
+function ensureUpdater(): typeof autoUpdater {
+  if (!_updaterInitialized) {
+    _updaterInitialized = true
+    try {
+      const eu = require('electron-updater')
+      autoUpdater = eu.autoUpdater
 
-// Use the logger for electron-updater internal logging
-autoUpdater.logger = {
-  info: (msg: unknown) => mainLog.info('[electron-updater]', msg),
-  warn: (msg: unknown) => mainLog.warn('[electron-updater]', msg),
-  error: (msg: unknown) => mainLog.error('[electron-updater]', msg),
-  debug: (msg: unknown) => mainLog.info('[electron-updater:debug]', msg),
+      autoUpdater!.autoDownload = true
+      autoUpdater!.autoInstallOnAppQuit = true
+      autoUpdater!.logger = {
+        info: (msg: unknown) => mainLog.info('[electron-updater]', msg),
+        warn: (msg: unknown) => mainLog.warn('[electron-updater]', msg),
+        error: (msg: unknown) => mainLog.error('[electron-updater]', msg),
+        debug: (msg: unknown) => mainLog.info('[electron-updater:debug]', msg),
+      }
+
+      autoUpdater!.on('checking-for-update', () => {
+        mainLog.info('[auto-update] Checking for updates...')
+      })
+
+      autoUpdater!.on('update-available', (info: any) => {
+        mainLog.info(`[auto-update] Update available: ${updateInfo.currentVersion} → ${info.version}`)
+        const internalState = checkElectronUpdaterState()
+        if (internalState.ready) {
+          mainLog.info(`[auto-update] electron-updater reports download ready`)
+          updateInfo = { ...updateInfo, available: true, latestVersion: info.version, downloadState: 'ready', downloadProgress: 100 }
+          broadcastUpdateInfo()
+          return
+        }
+        const existing = checkForExistingDownload()
+        if (existing.exists) {
+          mainLog.info(`[auto-update] Update already downloaded (file check), setting state to ready`)
+          updateInfo = { ...updateInfo, available: true, latestVersion: info.version, downloadState: 'ready', downloadProgress: 100 }
+          broadcastUpdateInfo()
+          return
+        }
+        updateInfo = { ...updateInfo, available: true, latestVersion: info.version, downloadState: 'downloading', downloadProgress: 0 }
+        broadcastUpdateInfo()
+      })
+
+      autoUpdater!.on('update-not-available', (info: any) => {
+        mainLog.info(`[auto-update] Already up to date (${info.version})`)
+        updateInfo = { ...updateInfo, available: false, latestVersion: info.version, downloadState: 'idle' }
+        broadcastUpdateInfo()
+      })
+
+      autoUpdater!.on('download-progress', (progress: any) => {
+        const percent = Math.round(progress.percent)
+        updateInfo = { ...updateInfo, downloadProgress: percent }
+        broadcastDownloadProgress(percent)
+      })
+
+      autoUpdater!.on('update-downloaded', async (info: any) => {
+        mainLog.info(`[auto-update] Update downloaded: v${info.version}`)
+        updateInfo = { ...updateInfo, available: true, latestVersion: info.version, downloadState: 'ready', downloadProgress: 100 }
+        broadcastUpdateInfo()
+        const { rebuildMenu } = await import('./menu')
+        rebuildMenu()
+      })
+
+      autoUpdater!.on('error', (error: Error) => {
+        mainLog.error('[auto-update] Error:', error.message)
+        updateInfo = { ...updateInfo, downloadState: 'error', error: error.message }
+        broadcastUpdateInfo()
+      })
+    } catch (err) {
+      mainLog.warn('[auto-update] electron-updater not available (expected in dev mode):', err)
+    }
+  }
+  return autoUpdater
 }
-
-// ─── Event handlers ───────────────────────────────────────────────────────────
-
-autoUpdater.on('checking-for-update', () => {
-  mainLog.info('[auto-update] Checking for updates...')
-})
-
-autoUpdater.on('update-available', (info) => {
-  mainLog.info(`[auto-update] Update available: ${updateInfo.currentVersion} → ${info.version}`)
-
-  // First, check electron-updater's internal state (most reliable)
-  const internalState = checkElectronUpdaterState()
-  if (internalState.ready) {
-    mainLog.info(`[auto-update] electron-updater reports download ready`)
-    updateInfo = {
-      ...updateInfo,
-      available: true,
-      latestVersion: info.version,
-      downloadState: 'ready',
-      downloadProgress: 100,
-    }
-    broadcastUpdateInfo()
-    return
-  }
-
-  // Fallback: check if file exists in cache directory
-  const existing = checkForExistingDownload()
-  if (existing.exists) {
-    mainLog.info(`[auto-update] Update already downloaded (file check), setting state to ready`)
-    updateInfo = {
-      ...updateInfo,
-      available: true,
-      latestVersion: info.version,
-      downloadState: 'ready',
-      downloadProgress: 100,
-    }
-    broadcastUpdateInfo()
-    return
-  }
-
-  updateInfo = {
-    ...updateInfo,
-    available: true,
-    latestVersion: info.version,
-    downloadState: 'downloading',
-    downloadProgress: 0,
-  }
-  broadcastUpdateInfo()
-})
-
-autoUpdater.on('update-not-available', (info) => {
-  mainLog.info(`[auto-update] Already up to date (${info.version})`)
-
-  updateInfo = {
-    ...updateInfo,
-    available: false,
-    latestVersion: info.version,
-    downloadState: 'idle',
-  }
-  broadcastUpdateInfo()
-})
-
-autoUpdater.on('download-progress', (progress) => {
-  const percent = Math.round(progress.percent)
-  updateInfo = { ...updateInfo, downloadProgress: percent }
-  broadcastDownloadProgress(percent)
-})
-
-autoUpdater.on('update-downloaded', async (info) => {
-  mainLog.info(`[auto-update] Update downloaded: v${info.version}`)
-
-  updateInfo = {
-    ...updateInfo,
-    available: true,
-    latestVersion: info.version,
-    downloadState: 'ready',
-    downloadProgress: 100,
-  }
-  broadcastUpdateInfo()
-
-  // Rebuild menu to show "Install Update..." option
-  const { rebuildMenu } = await import('./menu')
-  rebuildMenu()
-})
-
-autoUpdater.on('error', (error) => {
-  mainLog.error('[auto-update] Error:', error.message)
-
-  updateInfo = {
-    ...updateInfo,
-    downloadState: 'error',
-    error: error.message,
-  }
-  broadcastUpdateInfo()
-})
 
 // ─── Exported API ─────────────────────────────────────────────────────────────
 
@@ -227,10 +194,12 @@ autoUpdater.on('error', (error) => {
  * This uses electron-updater's internal state which is more reliable than file checks.
  */
 function checkElectronUpdaterState(): { ready: boolean; version?: string } {
+  const updater = ensureUpdater()
+  if (!updater) return { ready: false }
   try {
     // Access electron-updater's internal downloadedUpdateHelper
     // @ts-expect-error - accessing internal API for reliability
-    const helper = autoUpdater.downloadedUpdateHelper
+    const helper = updater.downloadedUpdateHelper
     if (helper) {
       mainLog.info(`[auto-update] downloadedUpdateHelper exists, cacheDir: ${helper.cacheDir}`)
       // @ts-expect-error - accessing internal API
@@ -314,16 +283,19 @@ function checkForExistingDownload(): { exists: boolean; version?: string } {
  * @param options.autoDownload - If false, only checks without downloading (for manual "Check Now")
  */
 export async function checkForUpdates(options: CheckOptions = {}): Promise<UpdateInfo> {
+  const updater = ensureUpdater()
+  if (!updater) return getUpdateInfo()
+
   const { autoDownload = true } = options
 
   // Temporarily override autoDownload for this check if needed
   // (e.g., manual check from settings shouldn't auto-download on metered connections)
-  const previousAutoDownload = autoUpdater.autoDownload
-  autoUpdater.autoDownload = autoDownload
+  const previousAutoDownload = updater.autoDownload
+  updater.autoDownload = autoDownload
 
   try {
     // Check for updates - this returns a promise that resolves with the check result
-    const result = await autoUpdater.checkForUpdates()
+    const result = await updater.checkForUpdates()
 
     // If update is available and was already downloaded, the update-downloaded event
     // should fire. Wait a moment for events to settle before returning.
@@ -354,7 +326,7 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
     }
   } finally {
     // Restore previous autoDownload setting
-    autoUpdater.autoDownload = previousAutoDownload
+    updater.autoDownload = previousAutoDownload
   }
 
   return getUpdateInfo()
@@ -369,6 +341,9 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
  * Then relaunches the app automatically.
  */
 export async function installUpdate(): Promise<void> {
+  const updater = ensureUpdater()
+  if (!updater) throw new Error('Auto-updater not available')
+
   if (updateInfo.downloadState !== 'ready') {
     throw new Error('No update ready to install')
   }
@@ -387,7 +362,7 @@ export async function installUpdate(): Promise<void> {
   try {
     // isSilent=false shows the installer UI on Windows if needed (fallback)
     // isForceRunAfter=true ensures the app relaunches after install
-    autoUpdater.quitAndInstall(false, true)
+    updater.quitAndInstall(false, true)
   } catch (error) {
     __isUpdating = false
     mainLog.error('[auto-update] quitAndInstall failed:', error)
